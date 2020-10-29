@@ -1,0 +1,12 @@
+[package]
+name = "wgputest"
+version = "0.1.0"
+authors = ["Leonard Pauli <leonardpauli@me.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+wgpu = {version = "0.6.0", features = ["vulkan-portability"]}
+winit = { version = "0.22.1", features = ["web-sys"] }
+futures = { version = "0.3", default-features = false, features = ["std", "executor"] }
