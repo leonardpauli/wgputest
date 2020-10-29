@@ -1,12 +1,16 @@
 // starting point inspired from wgpu/examples/hello-triangle
 
 // TODO: read all vscode hover doc boxes
+// TODO: hot reloading of shader.*.spv
+// TODO: online/built-in compilation of shader.*
 
 use winit::{
 	event::{Event, WindowEvent},
 	event_loop::{ControlFlow, EventLoop},
 	window::Window,
 };
+
+use std::io::{Read};
 
 fn main() {
 	let event_loop = EventLoop::new();
@@ -35,6 +39,17 @@ fn main() {
 	// }
 }
 
+fn load_shader_module<'a, P: AsRef<std::path::Path>>(device: &wgpu::Device, p: P) -> wgpu::ShaderModule {
+	// TODO: handle errors
+	let a: &std::path::Path = p.as_ref();
+	println!("load_shader_module: {:?}", a.canonicalize());
+	let file = std::fs::File::open(p);
+	let mut buf = Vec::new();
+	file.unwrap().read_to_end(&mut buf).unwrap();
+	let res = wgpu::util::make_spirv(&buf[0..]);
+	device.create_shader_module(res)
+}
+
 async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::TextureFormat) {
 	let size = window.inner_size();
 	let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
@@ -60,8 +75,8 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 		.await
 		.expect("Failed to create device");
 
-	let vs_module = device.create_shader_module(wgpu::include_spirv!("../assets/gen/spv/shader.vert.spv"));
-	let fs_module = device.create_shader_module(wgpu::include_spirv!("../assets/gen/spv/shader.frag.spv"));
+	let vs_module = load_shader_module(&device, "assets/gen/spv/shader.vert.spv");
+	let fs_module = load_shader_module(&device, "assets/gen/spv/shader.frag.spv");
 
 	let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
 		label: None,
@@ -116,7 +131,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 				&pipeline_layout,
 		);
 
-		*control_flow = ControlFlow::Poll;
+		*control_flow = ControlFlow::Wait;
 		match event {
 				Event::WindowEvent {
 						event: WindowEvent::Resized(size),
