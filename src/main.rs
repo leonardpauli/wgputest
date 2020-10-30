@@ -245,7 +245,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 		}
 
 
-		*control_flow = ControlFlow::Poll;
+		*control_flow = ControlFlow::WaitUntil(std::time::Instant::now() + std::time::Duration::from_millis(100));
 		match event {
 			Event::WindowEvent {
 				event:
