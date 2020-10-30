@@ -1,18 +1,16 @@
 // starting point inspired from wgpu/examples/hello-triangle
 
 // TODO: read all vscode hover doc boxes
-// TODO: hot reloading of shader.*.spv
 // TODO: online/built-in compilation of shader.*
 
 use winit::{
-	event::{Event, StartCause, WindowEvent},
+	event::{Event, WindowEvent},
 	event_loop::{ControlFlow, EventLoop},
 	window::Window,
 };
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
-use std::time::{Duration, Instant};
 
 use std::io::Read;
 
@@ -48,8 +46,8 @@ fn load_shader_module<'a, P: AsRef<std::path::Path>>(
 	p: P,
 ) -> wgpu::ShaderModule {
 	// TODO: handle errors
-	let a: &std::path::Path = p.as_ref();
-	println!("load_shader_module: {:?}", a.canonicalize());
+	// let a: &std::path::Path = p.as_ref();
+	// println!("load_shader_module: {:?}", a.canonicalize());
 	let file = std::fs::File::open(p);
 	let mut buf = Vec::new();
 	file.unwrap().read_to_end(&mut buf).unwrap();
@@ -145,17 +143,24 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 
 	}
 
+	let render_pipeline_needs_update = std::sync::Mutex::new(true);
+	let render_pipeline_needs_update1 = std::sync::Arc::new(render_pipeline_needs_update);
+	let render_pipeline_needs_update2 = std::sync::Arc::clone(&render_pipeline_needs_update1);
+
 	let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |res| match res {
 		Ok(event) => {
 			let event: notify::Event = event;
 
 			match event.kind {
 				notify::EventKind::Modify(notify::event::ModifyKind::Data(_))=> {
+					// TODO: debouncing? sometimes getting two consecutive
+					// println!("event: {:?}", event);
 					for p in event.paths.iter() {
 						let p: &std::path::PathBuf = p;
 						let p = p.canonicalize().unwrap();
 						compile_shader_at_path(&p);
 					}
+					*render_pipeline_needs_update1.lock().unwrap() = true;
 					wr.request_redraw();
 				},
 				_=> {}, // println!("event: {:?}", event)
@@ -168,9 +173,9 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 		.watch(shaders_source_dir, RecursiveMode::Recursive)
 		.unwrap();
 
-
-	let mut vs_module = load_shader_module(&device, "assets/gen/spv/shader.vert");
-	let mut fs_module = load_shader_module(&device, "assets/gen/spv/shader.frag");
+	let mut vs_module: Option<wgpu::ShaderModule> = None;
+	let mut fs_module: Option<wgpu::ShaderModule> = None;
+	let mut render_pipeline: Option<wgpu::RenderPipeline> = None;
 
 	event_loop.run(move |event, _, control_flow| {
 		// println!("{:?}", event);
@@ -201,7 +206,46 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 			}
 			*/
 
-		*control_flow = ControlFlow::Wait;
+		let mut render_pipeline_needs_update = render_pipeline_needs_update2.lock().unwrap();
+		if *render_pipeline_needs_update {
+			*render_pipeline_needs_update = false;
+
+			let start = std::time::Instant::now();
+			vs_module = Some(load_shader_module(&device, "assets/gen/spv/shader.vert"));
+			fs_module = Some(load_shader_module(&device, "assets/gen/spv/shader.frag"));
+			println!("shader.load x2 ({}ms)", start.elapsed().as_millis());
+
+			let start = std::time::Instant::now();
+			render_pipeline = Some(device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+				label: None,
+				layout: Some(&pipeline_layout),
+				vertex_stage: wgpu::ProgrammableStageDescriptor {
+					module: &vs_module.as_ref().unwrap(),
+					entry_point: "main",
+				},
+				fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+					module: &fs_module.as_ref().unwrap(),
+					entry_point: "main",
+				}),
+				// Use the default rasterizer state: no culling, no depth bias
+				rasterization_state: None,
+				primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+				color_states: &[swapchain_format.into()],
+				depth_stencil_state: None,
+				vertex_state: wgpu::VertexStateDescriptor {
+					index_format: wgpu::IndexFormat::Uint16,
+					vertex_buffers: &[],
+				},
+				sample_count: 1,
+				sample_mask: !0,
+				alpha_to_coverage_enabled: false,
+			}));
+
+			println!("render_pipeline.created ({}ms)", start.elapsed().as_millis());
+		}
+
+
+		*control_flow = ControlFlow::Poll;
 		match event {
 			Event::WindowEvent {
 				event:
@@ -240,34 +284,6 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 					.expect("Failed to acquire next swap chain texture")
 					.output;
 
-				vs_module = load_shader_module(&device, "assets/gen/spv/shader.vert");
-				fs_module = load_shader_module(&device, "assets/gen/spv/shader.frag");
-
-				let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-					label: None,
-					layout: Some(&pipeline_layout),
-					vertex_stage: wgpu::ProgrammableStageDescriptor {
-						module: &vs_module,
-						entry_point: "main",
-					},
-					fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
-						module: &fs_module,
-						entry_point: "main",
-					}),
-					// Use the default rasterizer state: no culling, no depth bias
-					rasterization_state: None,
-					primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-					color_states: &[swapchain_format.into()],
-					depth_stencil_state: None,
-					vertex_state: wgpu::VertexStateDescriptor {
-						index_format: wgpu::IndexFormat::Uint16,
-						vertex_buffers: &[],
-					},
-					sample_count: 1,
-					sample_mask: !0,
-					alpha_to_coverage_enabled: false,
-				});
-
 				let mut encoder =
 					device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 				{
@@ -282,7 +298,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 						}],
 						depth_stencil_attachment: None,
 					});
-					rpass.set_pipeline(&render_pipeline);
+					rpass.set_pipeline(&render_pipeline.as_ref().unwrap());
 					rpass.draw(0..6, 0..1);
 				}
 
