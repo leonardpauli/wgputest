@@ -5,10 +5,14 @@
 // TODO: online/built-in compilation of shader.*
 
 use winit::{
-	event::{Event, WindowEvent},
+	event::{Event, WindowEvent, StartCause},
 	event_loop::{ControlFlow, EventLoop},
 	window::Window,
 };
+
+use notify::{Watcher, RecommendedWatcher, RecursiveMode};
+
+use std::time::{Instant, Duration};
 
 use std::io::{Read};
 
@@ -75,39 +79,17 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 		.await
 		.expect("Failed to create device");
 
-	let vs_module = load_shader_module(&device, "assets/gen/spv/shader.vert.spv");
-	let fs_module = load_shader_module(&device, "assets/gen/spv/shader.frag.spv");
-
 	let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
 		label: None,
 		bind_group_layouts: &[],
 		push_constant_ranges: &[],
 	});
 
-	let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-		label: None,
-		layout: Some(&pipeline_layout),
-		vertex_stage: wgpu::ProgrammableStageDescriptor {
-				module: &vs_module,
-				entry_point: "main",
-		},
-		fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
-				module: &fs_module,
-				entry_point: "main",
-		}),
-		// Use the default rasterizer state: no culling, no depth bias
-		rasterization_state: None,
-		primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-		color_states: &[swapchain_format.into()],
-		depth_stencil_state: None,
-		vertex_state: wgpu::VertexStateDescriptor {
-				index_format: wgpu::IndexFormat::Uint16,
-				vertex_buffers: &[],
-		},
-		sample_count: 1,
-		sample_mask: !0,
-		alpha_to_coverage_enabled: false,
-	});
+
+	let mut vs_module = load_shader_module(&device, "assets/gen/spv/shader.vert.spv");
+	let mut fs_module = load_shader_module(&device, "assets/gen/spv/shader.frag.spv");
+
+
 
 	let mut sc_desc = wgpu::SwapChainDescriptor {
 		usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
@@ -119,7 +101,39 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 
 	let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
+	let wr = std::sync::Arc::from(window);
+	let window = wr.clone();
+
+	let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |res| {
+		match res {
+			 Ok(event) => {
+				 println!("event: {:?}", event);
+
+				 let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("./gen_spv.sh")
+            .output()
+						.expect("failed to execute process");
+
+					println!("exec out: {:?}, err:{:?};",
+						String::from_utf8_lossy(&out.stdout[0..]),
+						String::from_utf8_lossy(&out.stderr[0..]));
+
+					wr.request_redraw();
+			},
+			 Err(e) => println!("watch error: {:?}", e),
+		}
+}).unwrap();
+
+// Add a path to be watched. All files and directories at that path and
+// below will be monitored for changes.
+watcher.watch("assets/shaders", RecursiveMode::Recursive).unwrap();
+
+
+
 	event_loop.run(move |event, _, control_flow| {
+		// println!("{:?}", event);
+
 		// Have the closure take ownership of the resources.
 		// `event_loop.run` never returns, therefore we must do this to ensure
 		// the resources are properly cleaned up.
@@ -131,8 +145,34 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 				&pipeline_layout,
 		);
 
+		let timer_dur = Duration::from_millis(300);
+
+		/*
+		WindowEvent {
+			window_id: WindowId(Id(140254236424576)),
+			event: KeyboardInput {
+				device_id: DeviceId(DeviceId),
+				input: KeyboardInput {
+					scancode: 15, state: Released,
+					virtual_keycode: Some(R),
+					modifiers: (empty)
+				}, is_synthetic: false }
+			}
+			*/
+
+
 		*control_flow = ControlFlow::Wait;
 		match event {
+			Event::WindowEvent {event: WindowEvent::KeyboardInput {input: winit::event::KeyboardInput {virtual_keycode: Some(winit::event::VirtualKeyCode::R), ..}, ..}, ..} => {
+				window.request_redraw();
+			},
+				// Event::NewEvents(StartCause::Init)=> {
+				// 	*control_flow = ControlFlow::WaitUntil(Instant::now() + timer_dur);
+				// },
+				// Event::NewEvents(StartCause::ResumeTimeReached {..})=> {
+				// 	*control_flow = ControlFlow::WaitUntil(Instant::now() + timer_dur);
+				// 	println!("Time!");
+				// },
 				Event::WindowEvent {
 						event: WindowEvent::Resized(size),
 						..
@@ -141,12 +181,43 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 						sc_desc.width = size.width;
 						sc_desc.height = size.height;
 						swap_chain = device.create_swap_chain(&surface, &sc_desc);
+						window.request_redraw();
 				}
 				Event::RedrawRequested(_) => {
 						let frame = swap_chain
 								.get_current_frame()
 								.expect("Failed to acquire next swap chain texture")
 								.output;
+
+								vs_module = load_shader_module(&device, "assets/gen/spv/shader.vert.spv");
+								fs_module = load_shader_module(&device, "assets/gen/spv/shader.frag.spv");
+
+								let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+									label: None,
+									layout: Some(&pipeline_layout),
+									vertex_stage: wgpu::ProgrammableStageDescriptor {
+											module: &vs_module,
+											entry_point: "main",
+									},
+									fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+											module: &fs_module,
+											entry_point: "main",
+									}),
+									// Use the default rasterizer state: no culling, no depth bias
+									rasterization_state: None,
+									primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+									color_states: &[swapchain_format.into()],
+									depth_stencil_state: None,
+									vertex_state: wgpu::VertexStateDescriptor {
+											index_format: wgpu::IndexFormat::Uint16,
+											vertex_buffers: &[],
+									},
+									sample_count: 1,
+									sample_mask: !0,
+									alpha_to_coverage_enabled: false,
+								});
+
+
 						let mut encoder =
 								device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 						{
