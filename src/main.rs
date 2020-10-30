@@ -88,9 +88,6 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 		push_constant_ranges: &[],
 	});
 
-	let mut vs_module = load_shader_module(&device, "assets/gen/spv/shader.vert.spv");
-	let mut fs_module = load_shader_module(&device, "assets/gen/spv/shader.frag.spv");
-
 	let mut sc_desc = wgpu::SwapChainDescriptor {
 		usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
 		format: swapchain_format,
@@ -104,34 +101,76 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 	let wr = std::sync::Arc::from(window);
 	let window = wr.clone();
 
+
+	const ASSET_GEN_SPV_DIR_STR: &str = "assets/gen/spv";
+	const SHADER_SRC_DIR_STR: &str = "assets/shaders";
+	let shaders_source_dir = std::path::Path::new(SHADER_SRC_DIR_STR);
+	let asset_gen_spv_dir = std::path::Path::new(ASSET_GEN_SPV_DIR_STR);
+
+	fn compile_shader_at_path(p: &std::path::PathBuf) {
+		let dir = std::path::Path::new(ASSET_GEN_SPV_DIR_STR);
+		let name = p.components().last().unwrap();
+		let source = p.to_str().unwrap();
+		let target = dir.join(name);
+
+		let start = std::time::Instant::now();
+		println!("shader.compile.start({:?})", name);
+		let res = std::process::Command::new("glslangValidator")
+			.arg(source)
+			.arg("-V")
+			.arg("-o").arg(target)
+			.output()
+			.expect("failed to execute process");
+
+		println!("shader.compile.end({:?}) {}ms status({})", name, start.elapsed().as_millis(), res.status);
+		if !res.status.success() {
+			println!(
+				"\t---{{\nexec out: {}\nerr: {};\n\t}}---",
+				String::from_utf8_lossy(&res.stdout[0..]),
+				String::from_utf8_lossy(&res.stderr[0..])
+			);
+		}
+	}
+
+	if !asset_gen_spv_dir.is_dir() {
+		let dir = asset_gen_spv_dir;
+		std::fs::create_dir_all(dir).unwrap();
+
+		for entry in std::fs::read_dir(shaders_source_dir).unwrap().map(|x| x.unwrap()) {
+			let entry: std::fs::DirEntry = entry;
+			let ignore = entry.file_name().to_str().unwrap().starts_with(".");
+			if ignore {continue;}
+			compile_shader_at_path(&entry.path());
+		}
+
+	}
+
 	let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |res| match res {
 		Ok(event) => {
 			let event: notify::Event = event;
-			println!("event: {:?}", event);
 
-			let out = std::process::Command::new("sh")
-				.arg("-c")
-				.arg("./gen_spv.sh")
-				.output()
-				.expect("failed to execute process");
-
-			println!(
-				"exec out: {:?}, err:{:?};",
-				String::from_utf8_lossy(&out.stdout[0..]),
-				String::from_utf8_lossy(&out.stderr[0..])
-			);
-
-			wr.request_redraw();
+			match event.kind {
+				notify::EventKind::Modify(notify::event::ModifyKind::Data(_))=> {
+					for p in event.paths.iter() {
+						let p: &std::path::PathBuf = p;
+						let p = p.canonicalize().unwrap();
+						compile_shader_at_path(&p);
+					}
+					wr.request_redraw();
+				},
+				_=> {}, // println!("event: {:?}", event)
+			}
 		}
 		Err(e) => println!("watch error: {:?}", e),
 	})
 	.unwrap();
-
-	// Add a path to be watched. All files and directories at that path and
-	// below will be monitored for changes.
 	watcher
-		.watch("assets/shaders", RecursiveMode::Recursive)
+		.watch(shaders_source_dir, RecursiveMode::Recursive)
 		.unwrap();
+
+
+	let mut vs_module = load_shader_module(&device, "assets/gen/spv/shader.vert");
+	let mut fs_module = load_shader_module(&device, "assets/gen/spv/shader.frag");
 
 	event_loop.run(move |event, _, control_flow| {
 		// println!("{:?}", event);
@@ -147,7 +186,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 			&pipeline_layout,
 		);
 
-		let timer_dur = Duration::from_millis(300);
+		// let timer_dur = Duration::from_millis(300);
 
 		/*
 		WindowEvent {
@@ -201,8 +240,8 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 					.expect("Failed to acquire next swap chain texture")
 					.output;
 
-				vs_module = load_shader_module(&device, "assets/gen/spv/shader.vert.spv");
-				fs_module = load_shader_module(&device, "assets/gen/spv/shader.frag.spv");
+				vs_module = load_shader_module(&device, "assets/gen/spv/shader.vert");
+				fs_module = load_shader_module(&device, "assets/gen/spv/shader.frag");
 
 				let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
 					label: None,

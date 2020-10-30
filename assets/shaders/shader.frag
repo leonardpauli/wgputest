@@ -46,6 +46,9 @@ void main() {
 	float w = iResolution.x/iResolution.y;
 	uv.x *= w;
 
+	outColor = vec4(uv.xy, 0.0, 1.0);
+	return;
+
 	// ray origin, ray direction; ray marching SDF
 	// ray from camera goes from +z -> -z
 	float cam_off = 2000.0;
