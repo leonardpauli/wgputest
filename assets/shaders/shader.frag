@@ -32,21 +32,23 @@ float scene_sdf(in vec3 p) {
 // ray marching
 
 vec3 scene_norm(in vec3 p) {
-		// normal is perpendicular to tangent
-		// tangent's tilt is the derivative
-		// derivative is dy/dx
-		// dy/dx is lim(h->0) of f(a+h)-f(a) / h
-		// in multi-variable, derivative is called gradient
+	// normal is perpendicular to tangent
+	// tangent's tilt is the derivative
+	// derivative is dy/dx
+	// dy/dx is lim(h->0) of f(a+h)-f(a) / h
+	// in multi-variable, derivative is called gradient
+	// normalizing the gradient, we (almost?) get the normal?
 
-		float h = 0.001;
-		float o = scene_sdf(p);
-		vec3 grad = vec3(
-			scene_sdf(p+vec3(h,.0,.0)),
-			scene_sdf(p+vec3(.0,h,.0)),
-			scene_sdf(p+vec3(.0,.0,h))
-		) - o;
+	float k_derivative_epsilon = 0.000001;
+	float h = k_derivative_epsilon;
+	float o = scene_sdf(p);
+	vec3 grad = vec3(
+		scene_sdf(p+vec3(h,.0,.0)),
+		scene_sdf(p+vec3(.0,h,.0)),
+		scene_sdf(p+vec3(.0,.0,h))
+	) - o;
 
-	return grad;
+	return normalize(grad);
 }
 
 // ray origin, ray direction
@@ -96,7 +98,14 @@ void main() {
 	vec3 ray_dir = normalize(pixel_center - eye_pos);
 
 	float dist = dist_to_surface(eye_pos, ray_dir);
+	vec3 p = eye_pos + ray_dir*dist;
+	vec3 norm = scene_norm(p);
 
-	float c = dist/2.0;
+	vec3 light_pos = vec3(1.0, 1.0, 0.0);
+	vec3 to_light = normalize(light_pos-p);
+	vec3 perfect_reflection = dot(to_light, norm)-to_light;
+	float angle_to_perfect = acos(dot(perfect_reflection, norm));
+
+	float c = angle_to_perfect / (3.14159/2.0);
 	frag_color = vec4(c, c, c, 1.0);
 }
