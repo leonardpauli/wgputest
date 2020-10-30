@@ -6,6 +6,8 @@ layout(location = 0) out vec4 frag_color;
 // TODO: gamma correct
 // TODO: antialiasing
 
+// some inspired by http://jamie-wong.com/2016/07/15/ray-marching-signed-distance-functions/
+
 
 // consts
 
@@ -128,22 +130,20 @@ void main() {
 	c += 0.004; // ambient lighting
 
 	{
-		float intensity = 0.5;
+		float intensity = 0.4;
 		vec3 light_pos = vec3(k_v2*0.8, 1.0);
+		light_pos = vec3(4.0, 4.0, -100.0);
 		vec3 from_light = normalize(p-light_pos);
 		vec3 perfect_reflection = reflect(from_light, norm);
-		float angle_to_perfect = dot(perfect_reflection, norm);
-		float angle_to_perfect_10 = 1-min(1, (acos(angle_to_perfect)/PIf2));
+		float cos_angle_to_perfect = dot(perfect_reflection, norm);
+		float angle_to_perfect_10 = 1-min(1, (acos(cos_angle_to_perfect)/PIf2));
 		c += angle_to_perfect_10*intensity;
-	}
-	{
-		float intensity = 0.0;
-		vec3 light_pos = vec3(-0.7, 3.5, 1.0);
-		vec3 from_light = normalize(p-light_pos);
-		vec3 perfect_reflection = reflect(from_light, norm);
-		float angle_to_perfect = dot(perfect_reflection, norm);
-		float angle_to_perfect_10 = 1-min(1, (acos(angle_to_perfect)/PIf2));
-		c += angle_to_perfect_10 * intensity;
+
+		vec3 to_eye = normalize(eye_pos-p);
+		float cos_angle_to_eye = dot(-1*from_light, to_eye);
+		float angle_to_eye_10 = acos(cos_angle_to_eye)/PIf2;
+		// c += pow(angle_to_eye_10, 15.9)*0.005;
+		// c += pow(angle_to_eye_10, 8.0)*0.005;
 	}
 
 	frag_color = vec4(c, c, c, 1.0);

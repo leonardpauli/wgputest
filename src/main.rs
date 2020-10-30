@@ -18,6 +18,7 @@ fn main() {
 	let event_loop = EventLoop::new();
 	let window = winit::window::WindowBuilder::new()
 		.with_inner_size(winit::dpi::LogicalSize::new(1400/2, 1000/2))
+		.with_title("wgputest by Leonard Pauli, oct 2020")
 		.build(&event_loop).unwrap();
 	// #[cfg(not(target_arch = "wasm32"))]
 	{
