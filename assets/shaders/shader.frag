@@ -3,10 +3,24 @@
 in vec4 gl_FragCoord;
 layout(location = 0) out vec4 frag_color;
 
+// TODO: gamma correct
+// TODO: antialiasing
+
 
 // consts
 
+#define PI 3.1415926538
+#define PIf2 1.570796327 // pi fraction 2 (pi/2)
+#define PI2 6.283185307 // 2*pi
+
 const float inf = 1.0/0.0;
+
+const int k_ray_marching_steps = 100;
+const float k_ray_marching_start_offset = 0.0001;
+const float k_ray_marching_max_dist = 100.0;
+const float k_ray_marching_epsilon = 0.0001;
+const float k_derivative_epsilon = 0.0001;
+const vec2 k_v2 = vec2(1.0,1.0);
 
 
 // all sdf's are from origin?
@@ -39,7 +53,6 @@ vec3 scene_norm(in vec3 p) {
 	// in multi-variable, derivative is called gradient
 	// normalizing the gradient, we (almost?) get the normal?
 
-	float k_derivative_epsilon = 0.000001;
 	float h = k_derivative_epsilon;
 	float o = scene_sdf(p);
 	vec3 grad = vec3(
@@ -47,16 +60,17 @@ vec3 scene_norm(in vec3 p) {
 		scene_sdf(p+vec3(.0,h,.0)),
 		scene_sdf(p+vec3(.0,.0,h))
 	) - o;
+	// grad = vec3(
+	// 	scene_sdf(p+vec3(h,.0,.0))-scene_sdf(p-vec3(h,.0,.0)),
+	// 	scene_sdf(p+vec3(.0,h,.0))-scene_sdf(p-vec3(.0,h,.0)),
+	// 	scene_sdf(p+vec3(.0,.0,h))-scene_sdf(p-vec3(.0,.0,h))
+	// );
 
 	return normalize(grad);
 }
 
 // ray origin, ray direction
 float dist_to_surface(in vec3 ro, in vec3 rd) {
-	const int k_ray_marching_steps = 100;
-	const float k_ray_marching_start_offset = 0.0001;
-	const float k_ray_marching_max_dist = 100.0;
-	const float k_ray_marching_epsilon = 0.0001;
 
 	float dist = 0;
 	ro += k_ray_marching_start_offset*rd;
@@ -101,11 +115,37 @@ void main() {
 	vec3 p = eye_pos + ray_dir*dist;
 	vec3 norm = scene_norm(p);
 
-	vec3 light_pos = vec3(1.0, 1.0, 0.0);
-	vec3 to_light = normalize(light_pos-p);
-	vec3 perfect_reflection = dot(to_light, norm)-to_light;
-	float angle_to_perfect = acos(dot(perfect_reflection, norm));
+	if (dist >= k_ray_marching_max_dist) {
+		// sky/background
+		// float c = (uv.y+0.5+0.2)*0.04;
+		// frag_color = vec4(0.0,c*0.2,c, 1.0);
+		frag_color = vec4(0.0,0.0,0.0, 1.0);
+		return;
+	}
 
-	float c = angle_to_perfect / (3.14159/2.0);
+
+	float c = 0;
+	c += 0.004; // ambient lighting
+
+	{
+		float intensity = 0.5;
+		vec3 light_pos = vec3(k_v2*0.8, 1.0);
+		vec3 from_light = normalize(p-light_pos);
+		vec3 perfect_reflection = reflect(from_light, norm);
+		float angle_to_perfect = dot(perfect_reflection, norm);
+		float angle_to_perfect_10 = 1-min(1, (acos(angle_to_perfect)/PIf2));
+		c += angle_to_perfect_10*intensity;
+	}
+	{
+		float intensity = 0.0;
+		vec3 light_pos = vec3(-0.7, 3.5, 1.0);
+		vec3 from_light = normalize(p-light_pos);
+		vec3 perfect_reflection = reflect(from_light, norm);
+		float angle_to_perfect = dot(perfect_reflection, norm);
+		float angle_to_perfect_10 = 1-min(1, (acos(angle_to_perfect)/PIf2));
+		c += angle_to_perfect_10 * intensity;
+	}
+
 	frag_color = vec4(c, c, c, 1.0);
+	// frag_color = vec4(norm, 1.0);
 }
