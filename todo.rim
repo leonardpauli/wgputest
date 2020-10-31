@@ -6,6 +6,7 @@ next_up:
 	' https://en.wikipedia.org/wiki/Phong_reflection_model
 - read tut
 	' http://jamie-wong.com/2016/07/15/ray-marching-signed-distance-functions/
+	wgpu: // https://sotrh.github.io/learn-wgpu/beginner/tutorial6-uniforms/#using-the-uniforms-in-the-vertex-shader
 - raymarching mesh outline
 - obj id + obj specific color/material
 - union_smooth

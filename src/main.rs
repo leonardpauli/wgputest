@@ -3,11 +3,13 @@
 // TODO: read all vscode hover doc boxes
 // TODO: online/built-in compilation of shader.*
 
+use bytemuck;
 use winit::{
 	event::{Event, WindowEvent},
 	event_loop::{ControlFlow, EventLoop},
 	window::Window,
 };
+use wgpu::util::{DeviceExt};
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
@@ -58,6 +60,21 @@ fn load_shader_module<'a, P: AsRef<std::path::Path>>(
 	device.create_shader_module(res)
 }
 
+#[repr(C)] // make compatible with shader
+#[derive(Debug, Copy, Clone)] // make storable in buffer
+struct Uniforms {
+	val: f32,
+}
+unsafe impl bytemuck::Pod for Uniforms {} // ?
+unsafe impl bytemuck::Zeroable for Uniforms {} // ?
+impl Uniforms {
+	fn new() -> Self {
+		Self {
+			val: 0.5,
+		}
+	}
+}
+
 async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::TextureFormat) {
 	let size = window.inner_size();
 	let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
@@ -82,10 +99,46 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 		)
 		.await
 		.expect("Failed to create device");
+	let device: wgpu::Device = device;
+
+	let frag_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+		label: Some("frag_bind_group_layout"),
+		entries: &[
+			wgpu::BindGroupLayoutEntry {
+				binding: 0,
+				visibility: wgpu::ShaderStage::FRAGMENT,
+				ty: wgpu::BindingType::UniformBuffer {
+					dynamic: false,
+					min_binding_size: None, // wgpu::BufferSize::new(std::mem::size_of::<f64>() as _),
+				},
+				count: None,
+			},
+		],
+	});
+
+	let mut frag_uniforms = Uniforms::new();
+	let frag_uniforms_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+		label: Some("frag_uniforms"),
+		contents: bytemuck::cast_slice(&[frag_uniforms]),
+		usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+	});
+
+	let frag_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+		label: Some("frag_bind_group"),
+		layout: &frag_bind_group_layout,
+		entries: &[
+			wgpu::BindGroupEntry {
+				binding: 0,
+				resource: wgpu::BindingResource::Buffer(frag_uniforms_buf.slice(..)),
+			},
+		],
+	});
 
 	let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
 		label: None,
-		bind_group_layouts: &[],
+		bind_group_layouts: &[
+			&frag_bind_group_layout,
+		],
 		push_constant_ranges: &[],
 	});
 
@@ -192,6 +245,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 			&vs_module,
 			&fs_module,
 			&pipeline_layout,
+			&frag_bind_group,
 		);
 
 		// let timer_dur = Duration::from_millis(300);
@@ -247,7 +301,6 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 			println!("render_pipeline.created ({}ms)", start.elapsed().as_millis());
 		}
 
-
 		*control_flow = ControlFlow::WaitUntil(std::time::Instant::now() + std::time::Duration::from_millis(100));
 		match event {
 			Event::WindowEvent {
@@ -271,6 +324,18 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 			// 	*control_flow = ControlFlow::WaitUntil(Instant::now() + timer_dur);
 			// 	println!("Time!");
 			// },
+			Event::WindowEvent {
+				event: WindowEvent::CursorMoved { position, .. },
+				..
+			}=> {
+				let position: winit::dpi::PhysicalPosition<_> = position;
+
+				frag_uniforms.val = (position.x as f32)/1000.0;
+				queue.write_buffer(&frag_uniforms_buf, 0, bytemuck::cast_slice(&[frag_uniforms]));
+				window.request_redraw();
+
+				println!("{:?}", position.x);
+			},
 			Event::WindowEvent {
 				event: WindowEvent::Resized(size),
 				..
@@ -302,6 +367,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 						depth_stencil_attachment: None,
 					});
 					rpass.set_pipeline(&render_pipeline.as_ref().unwrap());
+					rpass.set_bind_group(0, &frag_bind_group, &[]);
 					rpass.draw(0..6, 0..1);
 				}
 

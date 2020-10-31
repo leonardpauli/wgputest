@@ -2,6 +2,9 @@
 
 in vec4 gl_FragCoord;
 layout(location = 0) out vec4 frag_color;
+layout(set = 0, binding = 0) uniform Uniforms {
+	float mousex;
+};
 
 // TODO: gamma correct
 // TODO: antialiasing
@@ -43,7 +46,7 @@ float union_smooth_sdf(in float a, in float b, in float k) {
 
 float scene_sdf(in vec3 p) {
 	float r = inf;
-	r = union_sdf(r, sphere_sdf(p, 0.5));
+	r = union_sdf(r, sphere_sdf(p, mousex));
 	r = union_sdf(r, sphere_sdf(p-vec3(.6,0.3,0.2), 0.3));
 	r = union_smooth_sdf(r, sphere_sdf(p-vec3(-.6,0.3,0.2), 0.3), 0.3);
 	// r = union_sdf(r, sphere_sdf(p-xy*0.5, 0.1));
@@ -131,26 +134,30 @@ vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 		return vec4(0.0,0.0,0.0,0.0);
 	}
 
+	float ambient_lighting = 0.004;
 
 	float c = 0;
-	c += 0.004; // ambient lighting
+	c += ambient_lighting;
 
 
 	{
+		vec3 light_pos = vec3(0.3, 1.3,(mousex-0.5)*3.0);
 		float intensity = 0.5;
-		vec3 light_pos = vec3(0.0, 0.9,1.3);
+
 		vec3 from_light = normalize(p-light_pos);
 		vec3 perfect_reflection = reflect(from_light, norm);
+
 		float cos_angle_to_perfect = dot(perfect_reflection, norm);
 		float angle_to_perfect_10 = 1-min(1, (acos(cos_angle_to_perfect)/PIf2));
 		c += angle_to_perfect_10*intensity;
 
-		float spectacular_intensity = 0.04;
-		float spectacular_shininess = 3.5;
+		float specular_intensity = 0.005;
+		float specular_shininess = 5.5;
+
 		vec3 to_eye = normalize(p-eye_pos);
-		float cos_angle_to_eye = dot(perfect_reflection, to_eye);
-		float angle_to_eye_10 = acos(cos_angle_to_eye)/PIf2;
-		c += pow(angle_to_eye_10, spectacular_shininess)*spectacular_intensity;
+		float cos_angle_eye_to_reflection = dot(perfect_reflection, to_eye);
+		float angle_eye_to_reflection_10 = acos(cos_angle_eye_to_reflection)/PIf2;
+		c += pow(angle_eye_to_reflection_10, specular_shininess)*specular_intensity;
 	}
 
 	return vec4(c, c, c, 1.0);
