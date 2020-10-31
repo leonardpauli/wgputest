@@ -1,0 +1,51 @@
+# wgputest
+' created by Leonard Pauli, 31 oct 2020
+
+next_up:
+- phong reflection model for specular
+	' https://en.wikipedia.org/wiki/Phong_reflection_model
+- read tut
+	' http://jamie-wong.com/2016/07/15/ray-marching-signed-distance-functions/
+- raymarching mesh outline
+- obj id + obj specific color/material
+- union_smooth
+- emission
+- reflection
+- diffuse
+	- use noise
+	- use fibonacii sphere spread
+		' (exp corrected or not?)
+- rotate camera
+	- locally
+	- around point
+- move camera
+	- globally
+	- locally
+	- local to object
+- updated camera model with dof
+- transparancy, glass, ior(index of refraction)(between mediums?)
+- volume rendering (subsurface scattering / inside volume diffuse?)
+- simple physics + anim, attraction + bounce/consistent momentum
+- side-layered cube (eg. render different layers inside cube depending on which side ray passes into)
+- make scene + loop gif + publish
+
+
+later:
+- mouse input to shader
+- buffer copy?
+- gamma color correction?
+- export image to png
+- gen gif
+- text render
+- antialiasing
+	if passed closeby(< 1px) mesh, lerp between first mesh + (last mesh or background) with (dist to mesh)/(1px dist (at same z))?
+	// TODO: antialiasing; use pixel_width = ...; smooth_step(x, x+pixel_width...) ?
+	// https://mortoray.com/2015/06/19/antialiasing-with-a-signed-distance-field/
+	// https://drewcassidy.me/2020/06/26/sdf-antialiasing/
+
+done:
+- hot reload shader
+
+
+' links
+	https://www.iquilezles.org/www/index.htm
