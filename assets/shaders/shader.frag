@@ -83,11 +83,14 @@ vec3 scene_norm(in vec3 p) {
 }
 
 // ray origin, ray direction
-float dist_to_surface(in vec3 ro, in vec3 rd) {
+vec2 dist_to_surface(in vec3 ro, in vec3 rd) {
 
 	// for antialiasing
 	// float first_dist_within_1px = -1.0;
 	// float first_dist_within_1px_p = -1.0;
+
+	float closeness_f = 0.0005;
+	float acc_closeness = 0;
 
 	float dist = 0;
 	float step_dist;
@@ -100,6 +103,7 @@ float dist_to_surface(in vec3 ro, in vec3 rd) {
 
 		step_dist = scene_sdf(ro);
 		dist += step_dist;
+		acc_closeness += closeness_f/step_dist;
 
 		// for antialiasing
 		// if (step_dist <= _1px_dist_at_z && first_dist_within_1px_p<0.0) {
@@ -119,7 +123,7 @@ float dist_to_surface(in vec3 ro, in vec3 rd) {
 	// }
 
 	// return vec3(dist, first_dist_within_1px, first_dist_within_1px_p);
-	return dist;
+	return vec2(dist, acc_closeness);
 }
 
 
@@ -188,7 +192,10 @@ void main() {
 	vec3 pixel_center = eye_pos + vec3(uv.xy + film_pixel_size.xy/2.0, -film_offset); // TODO: aspect_ratio?
 
 	vec3 ray_dir = normalize(pixel_center - eye_pos);
-	float dist = dist_to_surface(eye_pos, ray_dir);
+	vec2 dist2 = dist_to_surface(eye_pos, ray_dir);
+	float dist = dist2.x;
+	float acc_closeness = dist2.y;
 
 	frag_color = trace_color(eye_pos, ray_dir, dist);
+	if (dist > k_ray_marching_max_dist) frag_color.x += acc_closeness*0.05;
 }
