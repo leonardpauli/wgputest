@@ -147,7 +147,7 @@ vec2 dist_to_surface(in vec3 ro, in vec3 rd) {
 }
 
 
-vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, float dist) {
+vec4 trace_color_inner(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 	vec3 p = eye_pos + ray_dir*dist;
 	vec3 norm = scene_norm(p);
 
@@ -163,6 +163,9 @@ vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 	float c = 0;
 	c += ambient_lighting;
 
+
+	vec3 from_eye = normalize(p-eye_pos);
+	vec3 to_eye = -from_eye;
 
 	{
 		// vec3 light_pos = vec3(0.3, 1.3,(mousex-0.5)*3.0);
@@ -180,14 +183,34 @@ vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 		float specular_intensity = 0.005/pow(mousex*10.0, 10.0);
 		float specular_shininess = 5.5*mousex*10.0;
 
-		vec3 to_eye = normalize(p-eye_pos);
-		float cos_angle_eye_to_reflection = dot(perfect_reflection, to_eye);
+		float cos_angle_eye_to_reflection = dot(perfect_reflection, from_eye);
 		float angle_eye_to_reflection_10 = acos(cos_angle_eye_to_reflection)/PIf2;
 		c += pow(angle_eye_to_reflection_10, specular_shininess)*specular_intensity;
 	}
 
-	return vec4(c, c, c, 1.0);
+	vec4 color = vec4(c, c, c, 1.0);
+	return color;
 	// frag_color = vec4(norm, 1.0);
+}
+
+vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, float dist) {
+
+	vec3 p = eye_pos + ray_dir*dist;
+	vec3 norm = scene_norm(p);
+	vec3 from_eye = normalize(p-eye_pos);
+	vec3 to_eye = -from_eye;
+
+	vec4 color = trace_color_inner(eye_pos, ray_dir, dist);
+
+	const int k_reflection_bounces_max = 1;
+	for (int i = 0; i<k_reflection_bounces_max; i++) {
+		vec3 from_eye_perfect_reflect = reflect(from_eye, norm);
+		vec2 reflection_dist2 = dist_to_surface(p, from_eye_perfect_reflect);
+		vec4 reflection_color = trace_color_inner(p, from_eye_perfect_reflect, reflection_dist2.x);
+		color = reflection_color;
+	}
+
+	return color;
 }
 
 
