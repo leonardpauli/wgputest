@@ -7,7 +7,7 @@ next_up:
 - read tut
 	' http://jamie-wong.com/2016/07/15/ray-marching-signed-distance-functions/
 	wgpu: // https://sotrh.github.io/learn-wgpu/beginner/tutorial6-uniforms/#using-the-uniforms-in-the-vertex-shader
-- raymarching mesh outline
+
 - shadow ray
 - obj id + obj specific color/material
 - union_smooth
@@ -33,21 +33,36 @@ next_up:
 
 
 later:
-- mouse input to shader
-- buffer copy?
-- gamma color correction?
-- export image to png
-- gen gif
-- text render
-- antialiasing
-	if passed closeby(< 1px) mesh, lerp between first mesh + (last mesh or background) with (dist to mesh)/(1px dist (at same z))?
-	// TODO: antialiasing; use pixel_width = ...; smooth_step(x, x+pixel_width...) ?
-	// https://mortoray.com/2015/06/19/antialiasing-with-a-signed-distance-field/
-	// https://drewcassidy.me/2020/06/26/sdf-antialiasing/
+	export:
+		- export image to png
+		- gen gif
+	quality:
+		- gamma color correction?
+		- antialiasing
+			if passed closeby(< 1px) mesh, lerp between first mesh + (last mesh or background) with (dist to mesh)/(1px dist (at same z))?
+			// TODO: antialiasing; use pixel_width = ...; smooth_step(x, x+pixel_width...) ?
+			// https://mortoray.com/2015/06/19/antialiasing-with-a-signed-distance-field/
+			// https://drewcassidy.me/2020/06/26/sdf-antialiasing/
+	effects:
+		- particle simulation using compute shader
+		- electrical discharge / lightning simulation
+		- clouds
+		- fur
+		- water
+	misc:
+		- text render
+		- editor?
+		- camera fly through
+	tech:
+		- buffer copy?
+		- using rust-gpu
+		- wasm (webgpu + webgl support?)
+
 
 done:
 - hot reload shader
-
+- mouse input to shader through dynamic uniform buffer
+- raymarching mesh outline
 
 ' links
 	https://www.iquilezles.org/www/index.htm

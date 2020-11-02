@@ -3,6 +3,8 @@
 in vec4 gl_FragCoord;
 layout(location = 0) out vec4 frag_color;
 layout(set = 0, binding = 0) uniform Uniforms {
+	int window_size_physical_x;
+	int window_size_physical_y;
 	float mousex;
 	float mousey;
 };
@@ -193,7 +195,7 @@ vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 
 void main() {
 	vec2 frag_coord = gl_FragCoord.xy;
-	vec2 raster_size = vec2(1400.0, 1000.0);
+	vec2 raster_size = vec2(window_size_physical_x, window_size_physical_y);
 
 	// x,y as 0..1
 	vec2 uv = frag_coord/raster_size.xy;

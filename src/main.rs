@@ -16,10 +16,14 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 use std::io::Read;
 
+
+const WINDOW_SIZE_PHYSICAL: (u32, u32) = (1400/2, 1000/2);
+
+
 fn main() {
 	let event_loop = EventLoop::new();
 	let window = winit::window::WindowBuilder::new()
-		.with_inner_size(winit::dpi::LogicalSize::new(1400/2, 1000/2))
+		.with_inner_size(winit::dpi::PhysicalSize::new(WINDOW_SIZE_PHYSICAL.0, WINDOW_SIZE_PHYSICAL.1))
 		.with_title("wgputest by Leonard Pauli, oct 2020")
 		.build(&event_loop).unwrap();
 	// #[cfg(not(target_arch = "wasm32"))]
@@ -63,6 +67,8 @@ fn load_shader_module<'a, P: AsRef<std::path::Path>>(
 #[repr(C)] // make compatible with shader
 #[derive(Debug, Copy, Clone)] // make storable in buffer
 struct Uniforms {
+	window_size_physical_x: u32,
+	window_size_physical_y: u32,
 	mousex: f32,
 	mousey: f32,
 }
@@ -71,6 +77,8 @@ unsafe impl bytemuck::Zeroable for Uniforms {} // ?
 impl Uniforms {
 	fn new() -> Self {
 		Self {
+			window_size_physical_x: WINDOW_SIZE_PHYSICAL.0,
+			window_size_physical_y: WINDOW_SIZE_PHYSICAL.1,
 			mousex: 0.5,
 			mousey: 0.5,
 		}
@@ -332,8 +340,8 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 			}=> {
 				let position: winit::dpi::PhysicalPosition<_> = position;
 
-				frag_uniforms.mousex = (position.x as f32)/1400.0;
-				frag_uniforms.mousey = (position.y as f32)/1000.0;
+				frag_uniforms.mousex = (position.x as f32)/(WINDOW_SIZE_PHYSICAL.0 as f32);
+				frag_uniforms.mousey = (position.y as f32)/(WINDOW_SIZE_PHYSICAL.1 as f32);
 				queue.write_buffer(&frag_uniforms_buf, 0, bytemuck::cast_slice(&[frag_uniforms]));
 				window.request_redraw();
 
