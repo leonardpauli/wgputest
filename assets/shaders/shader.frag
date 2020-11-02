@@ -195,19 +195,23 @@ vec4 trace_color_inner(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 
 vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 
-	vec3 p = eye_pos + ray_dir*dist;
-	vec3 norm = scene_norm(p);
-	vec3 from_eye = normalize(p-eye_pos);
-	vec3 to_eye = -from_eye;
+	vec4 color = vec4(0.0,0.0,0.0,0.0);
 
-	vec4 color = trace_color_inner(eye_pos, ray_dir, dist);
-
-	const int k_reflection_bounces_max = 1;
+	const int k_reflection_bounces_max = 5;
 	for (int i = 0; i<k_reflection_bounces_max; i++) {
+		vec3 p = eye_pos + ray_dir*dist;
+		vec3 norm = scene_norm(p);
+		vec3 from_eye = normalize(p-eye_pos);
+		vec3 to_eye = -from_eye;
+
+		color += trace_color_inner(eye_pos, ray_dir, dist) * (1.0 - i/5.0);
+
 		vec3 from_eye_perfect_reflect = reflect(from_eye, norm);
 		vec2 reflection_dist2 = dist_to_surface(p, from_eye_perfect_reflect);
-		vec4 reflection_color = trace_color_inner(p, from_eye_perfect_reflect, reflection_dist2.x);
-		color = reflection_color;
+
+		eye_pos = p;
+		ray_dir = from_eye_perfect_reflect;
+		dist = reflection_dist2.x;
 	}
 
 	return color;

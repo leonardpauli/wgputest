@@ -7,7 +7,7 @@ next_up:
 - read tut
 	' http://jamie-wong.com/2016/07/15/ray-marching-signed-distance-functions/
 	wgpu: // https://sotrh.github.io/learn-wgpu/beginner/tutorial6-uniforms/#using-the-uniforms-in-the-vertex-shader
-
+	' http://learnwebgl.brown37.net/12_shader_language/glsl_control_structures.html
 - shadow ray
 - obj id + obj specific color/material
 - union_smooth
