@@ -63,14 +63,16 @@ fn load_shader_module<'a, P: AsRef<std::path::Path>>(
 #[repr(C)] // make compatible with shader
 #[derive(Debug, Copy, Clone)] // make storable in buffer
 struct Uniforms {
-	val: f32,
+	mousex: f32,
+	mousey: f32,
 }
 unsafe impl bytemuck::Pod for Uniforms {} // ?
 unsafe impl bytemuck::Zeroable for Uniforms {} // ?
 impl Uniforms {
 	fn new() -> Self {
 		Self {
-			val: 0.5,
+			mousex: 0.5,
+			mousey: 0.5,
 		}
 	}
 }
@@ -330,11 +332,12 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 			}=> {
 				let position: winit::dpi::PhysicalPosition<_> = position;
 
-				frag_uniforms.val = (position.x as f32)/1000.0;
+				frag_uniforms.mousex = (position.x as f32)/1400.0;
+				frag_uniforms.mousey = (position.y as f32)/1000.0;
 				queue.write_buffer(&frag_uniforms_buf, 0, bytemuck::cast_slice(&[frag_uniforms]));
 				window.request_redraw();
 
-				println!("{:?}", position.x);
+				// println!("{:?}", position.x);
 			},
 			Event::WindowEvent {
 				event: WindowEvent::Resized(size),

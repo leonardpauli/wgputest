@@ -4,6 +4,7 @@ in vec4 gl_FragCoord;
 layout(location = 0) out vec4 frag_color;
 layout(set = 0, binding = 0) uniform Uniforms {
 	float mousex;
+	float mousey;
 };
 
 // TODO: gamma correct
@@ -30,6 +31,10 @@ const vec2 k_v2 = vec2(1.0,1.0);
 
 // all sdf's are from origin?
 
+float plane_sdf(in vec3 p, in vec3 n, in float r) {
+	return dot(n, p) - r;
+}
+
 float sphere_sdf(in vec3 p, in float r) {
 	return length(p) - r;
 }
@@ -46,10 +51,23 @@ float union_smooth_sdf(in float a, in float b, in float k) {
 
 float scene_sdf(in vec3 p) {
 	float r = inf;
-	r = union_sdf(r, sphere_sdf(p, mousex));
-	r = union_sdf(r, sphere_sdf(p-vec3(.6,0.3,0.2), 0.3));
-	r = union_smooth_sdf(r, sphere_sdf(p-vec3(-.6,0.3,0.2), 0.3), 0.3);
-	// r = union_sdf(r, sphere_sdf(p-xy*0.5, 0.1));
+	// r = union_sdf(r, sphere_sdf(p, mousex));
+	// r = union_sdf(r, sphere_sdf(p-vec3(.6,0.3,0.2), 0.3));
+	// r = union_smooth_sdf(r, sphere_sdf(p-vec3(-.6,0.3,0.2), 0.3), 0.3);
+
+	vec2 mp = vec2((mousex-0.5)*2.0*1.4, -2.0*(mousey-0.5)*1.1);
+	r = union_sdf(r, plane_sdf(p - vec3(0.0,1.0,0.0), normalize(vec3(0.0, -1.0, 0.0)), 0.001));
+
+	// + sin(p.x*mousex*10.0)*0.1
+	r = union_smooth_sdf(r, plane_sdf(p - vec3(0.0,-1.0,0.0), normalize(vec3(0.0, 1.0, 0.0)), 0.001), 0.1);
+
+	r = union_smooth_sdf(r, plane_sdf(p - vec3(-1.0,0.0,0.0), normalize(vec3(1.0, 0.0, 0.0)), 0.001), 0.1);
+	r = union_smooth_sdf(r, plane_sdf(p - vec3(1.0,0.0,0.0), normalize(vec3(-1.0, 0.0, 0.0)), 0.001), 0.1);
+	r = union_smooth_sdf(r, plane_sdf(p - vec3(0.0,0.0,-2.0), normalize(vec3(0.0, 0.0, 1.0)), 0.001), 0.1);
+
+	r = union_smooth_sdf(r, sphere_sdf(p- vec3(-0.3, -0.3, -0.5), 0.23), 0.1);
+	r = union_smooth_sdf(r, sphere_sdf(p- vec3(0.3, -0.3, -0.3), 0.23), 0.1);
+	r = union_smooth_sdf(r, sphere_sdf(p- vec3(mp.xy, -0.4), 0.23), 0.3);
 	// r = union_sdf(r, sphere_sdf(p-xy*0.5, 0.1));
 	// r = union_sdf(r, sphere_sdf(p-vec3(0.5), 0.1));
 	return r;
@@ -145,8 +163,10 @@ vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 
 
 	{
-		vec3 light_pos = vec3(0.3, 1.3,(mousex-0.5)*3.0);
-		float intensity = 0.5;
+		// vec3 light_pos = vec3(0.3, 1.3,(mousex-0.5)*3.0);
+		vec3 light_pos = vec3(0.0, 0.0, 0.0);
+		// vec3 light_pos = vec3((mousex-0.5)*2.0, -2.0*(mousey-0.5), 0.0);
+		float intensity = 0.4;
 
 		vec3 from_light = normalize(p-light_pos);
 		vec3 perfect_reflection = reflect(from_light, norm);
@@ -155,8 +175,8 @@ vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 		float angle_to_perfect_10 = 1-min(1, (acos(cos_angle_to_perfect)/PIf2));
 		c += angle_to_perfect_10*intensity;
 
-		float specular_intensity = 0.005;
-		float specular_shininess = 5.5;
+		float specular_intensity = 0.005/pow(mousex*10.0, 10.0);
+		float specular_shininess = 5.5*mousex*10.0;
 
 		vec3 to_eye = normalize(p-eye_pos);
 		float cos_angle_eye_to_reflection = dot(perfect_reflection, to_eye);
@@ -197,5 +217,5 @@ void main() {
 	float acc_closeness = dist2.y;
 
 	frag_color = trace_color(eye_pos, ray_dir, dist);
-	if (dist > k_ray_marching_max_dist) frag_color.x += acc_closeness*0.05;
+	if (dist > k_ray_marching_max_dist) frag_color.x += acc_closeness;//*0.5;
 }
