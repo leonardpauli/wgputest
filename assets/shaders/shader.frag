@@ -28,6 +28,7 @@ const float k_ray_marching_start_offset = 0.0001;
 const float k_ray_marching_max_dist = 100.0;
 const float k_ray_marching_epsilon = 0.0001;
 const float k_derivative_epsilon = 0.0001;
+const int k_reflection_bounces_max = 2;
 const vec2 k_v2 = vec2(1.0,1.0);
 
 
@@ -39,6 +40,40 @@ float plane_sdf(in vec3 p, in vec3 n, in float r) {
 
 float sphere_sdf(in vec3 p, in float r) {
 	return length(p) - r;
+}
+
+// size is halfsize (from center to one corner)
+float box_sdf(in vec3 p, in vec3 size) {
+
+	// dxy = d.xy
+	// d_xy = any dxy < 0.0 ? max dxy : len dxy; dmz = (d_xy, d.z)
+	// d_mz = any dmz < 0.0 ? max dmz : len dmz; return d_mz
+
+	//    | S : C
+	//    | - s ....
+	//    | I | S  d
+	// -- c --------
+	//    |        p
+	// I: inside box
+	// s: size (positive point relative to c)
+	// c: center
+	// S: Side field of box
+	// C: Corner field of box
+	// p: asking point
+	// d: distance/vector from corner to "canonicalized" p
+	// ---
+	// center is origo: p -= c;
+	// symmetric, convert to first quadrant: p = abs(p) // "canonicalized"
+	// d = s->p;
+	vec3 d = abs(p) - size;
+	// if d is in I, all of d is negative, distance closest to edge is the maximum component of d
+	// if d is in S, some of d is negative, at least one is positive, closest distance to box is the maximum component of d
+	// if d is in C, all of d is positive, closest distance to box is the distance to the corner = length of d = length of d_pos
+	// float d_max = max(max(d.x, d.y), d.z);
+	// vec3 d_pos = max(d, 0.0);
+	// return length(d_pos) + min(d_max, 0.0);
+	// though not fully correct; in S, value will be too large? (both terms contribute?)
+	return length(max(d, 0.0)) + min(max(max(d.x, d.y), d.z), 0.0);
 }
 
 float union_sdf(in float a, in float b) {
@@ -58,22 +93,70 @@ float scene_sdf(in vec3 p) {
 	// r = union_smooth_sdf(r, sphere_sdf(p-vec3(-.6,0.3,0.2), 0.3), 0.3);
 
 	vec2 mp = vec2((mousex-0.5)*2.0*1.4, -2.0*(mousey-0.5)*1.1);
+	// mp = vec2(0.0,-0.3);
 	r = union_sdf(r, plane_sdf(p - vec3(0.0,1.0,0.0), normalize(vec3(0.0, -1.0, 0.0)), 0.001));
 
-	// + sin(p.x*mousex*10.0)*0.1
-	r = union_smooth_sdf(r, plane_sdf(p - vec3(0.0,-1.0,0.0), normalize(vec3(0.0, 1.0, 0.0)), 0.001), 0.1);
 
+	// floor
+	// float offset = sin(p.x*10.0)*0.05;
+	// offset += sin(p.z*5.0)*0.05;
+	// vec3 pos = vec3(0.0,-1.0 + offset, 0.0);
+	// vec3 dir = vec3(0.0, 1.0, 0.0);
+
+	// float thickness = 0.0;
+	// float plane_dist = plane_sdf(
+	// 	p - pos,
+	// 	normalize(dir),
+	// 	thickness
+	// );
+
+	// r = union_sdf(r, plane_dist);
+
+	// TODO: make waves radial instead?
+	float wave_offset = 0.0;
+	wave_offset += sin(p.x*1.1*10.0)*0.01;
+	wave_offset += sin(p.z*0.7*10.0)*0.02;
+	r = union_smooth_sdf(r, plane_sdf(
+		p - vec3(0.0,-1.0+wave_offset,0.0),
+		normalize(vec3(0.0, 1.0, 0.0)),
+		0.001
+	), 0.1);
+
+	// walls
 	r = union_smooth_sdf(r, plane_sdf(p - vec3(-1.0,0.0,0.0), normalize(vec3(1.0, 0.0, 0.0)), 0.001), 0.1);
 	r = union_smooth_sdf(r, plane_sdf(p - vec3(1.0,0.0,0.0), normalize(vec3(-1.0, 0.0, 0.0)), 0.001), 0.1);
 	r = union_smooth_sdf(r, plane_sdf(p - vec3(0.0,0.0,-2.0), normalize(vec3(0.0, 0.0, 1.0)), 0.001), 0.1);
+
+	// camera inside sphere?
+	// r = union_smooth_sdf(r, max(sphere_sdf(p- vec3(0.0,0.0,0.0), 3.0), -sphere_sdf(p- vec3(0.0,0.0,0.0), 2.5)), 0.3);
 
 	r = union_smooth_sdf(r, sphere_sdf(p- vec3(-0.3, -0.3, -0.5), 0.23), 0.1);
 	r = union_smooth_sdf(r, sphere_sdf(p- vec3(0.3, -0.3, -0.3), 0.23), 0.1);
 	r = union_smooth_sdf(r, sphere_sdf(p- vec3(mp.xy, -0.4), 0.23), 0.3);
 	// r = union_sdf(r, sphere_sdf(p-xy*0.5, 0.1));
 	// r = union_sdf(r, sphere_sdf(p-vec3(0.5), 0.1));
+
+	//r = union_sdf(r, box_sdf(p, vec3(-0.2, -0.2, -0.7), vec3(0.2, 0.1, 0.01)));
+	// r = union_smooth_sdf(r, box_sdf(p, vec3(0.5, -0.7, -0.4), vec3(0.1, 0.05, 0.2)), 0.15);
+	r = union_smooth_sdf(r, box_sdf(p-vec3(mp.xy, -0.4), vec3(0.5, 0.05, 0.05)), 0.35);
+	r = union_smooth_sdf(r, box_sdf(p-vec3(mp.xy, mp.y*1.2), vec3(0.02, 0.02, 0.4)), 0.15);
+
 	return r;
 }
+
+vec3 scene_color(in vec3 p) {
+	vec2 mp = vec2((mousex-0.5)*2.0*1.4, -2.0*(mousey-0.5)*1.1);
+
+	float d1 = sphere_sdf(p- vec3(-0.3, -0.3, -0.5), 0.23);
+	float d2 = sphere_sdf(p- vec3(0.3, -0.3, -0.3), 0.23);
+	float d3 = sphere_sdf(p- vec3(mp.xy, -0.4), 0.23);
+
+	return vec3(
+		smoothstep(0.0, k_ray_marching_epsilon*10.0, d1),
+		smoothstep(0.0, k_ray_marching_epsilon*10.0, d2),
+		smoothstep(0.0, k_ray_marching_epsilon*10.0, d3));
+}
+
 
 
 // ray marching
@@ -158,7 +241,7 @@ vec4 trace_color_inner(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 		return vec4(0.0,0.0,0.0,0.0);
 	}
 
-	float ambient_lighting = 0.004;
+	float ambient_lighting = 0.0001;
 
 	float c = 0;
 	c += ambient_lighting;
@@ -171,7 +254,7 @@ vec4 trace_color_inner(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 		// vec3 light_pos = vec3(0.3, 1.3,(mousex-0.5)*3.0);
 		vec3 light_pos = vec3(0.0, 0.0, 0.0);
 		// vec3 light_pos = vec3((mousex-0.5)*2.0, -2.0*(mousey-0.5), 0.0);
-		float intensity = 0.4;
+		float intensity = 0.3;
 
 		vec3 from_light = normalize(p-light_pos);
 		vec3 perfect_reflection = reflect(from_light, norm);
@@ -188,7 +271,10 @@ vec4 trace_color_inner(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 		c += pow(angle_eye_to_reflection_10, specular_shininess)*specular_intensity;
 	}
 
-	vec4 color = vec4(c, c, c, 1.0);
+	// vec4 color = vec4(c, c, c, 1.0);
+	vec3 col = scene_color(p);
+	vec4 color = vec4(col.x*c, col.y*c, col.z*c, 1.0);
+
 	return color;
 	// frag_color = vec4(norm, 1.0);
 }
@@ -197,14 +283,13 @@ vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 
 	vec4 color = vec4(0.0,0.0,0.0,0.0);
 
-	const int k_reflection_bounces_max = 5;
 	for (int i = 0; i<k_reflection_bounces_max; i++) {
 		vec3 p = eye_pos + ray_dir*dist;
 		vec3 norm = scene_norm(p);
 		vec3 from_eye = normalize(p-eye_pos);
 		vec3 to_eye = -from_eye;
 
-		color += trace_color_inner(eye_pos, ray_dir, dist) * (1.0 - i/5.0);
+		color += trace_color_inner(eye_pos, ray_dir, dist) * (1.0 - i/1.9);
 
 		vec3 from_eye_perfect_reflect = reflect(from_eye, norm);
 		vec2 reflection_dist2 = dist_to_surface(p, from_eye_perfect_reflect);
@@ -221,6 +306,8 @@ vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 // main
 
 void main() {
+	vec2 mp = vec2((mousex-0.5)*2.0*1.4, -2.0*(mousey-0.5)*1.1);
+
 	vec2 frag_coord = gl_FragCoord.xy;
 	vec2 raster_size = vec2(window_size_physical_x, window_size_physical_y);
 
@@ -244,6 +331,10 @@ void main() {
 	vec2 dist2 = dist_to_surface(eye_pos, ray_dir);
 	float dist = dist2.x;
 	float acc_closeness = dist2.y;
+
+	// float d = box_sdf(vec3(uv, 0.0)-vec3(0.0,mp.y, mp.x), vec3(0.1,0.2,0.1));
+	// frag_color = vec4(d, d, d, 1.0);
+	// return;
 
 	frag_color = trace_color(eye_pos, ray_dir, dist);
 	if (dist > k_ray_marching_max_dist) frag_color.x += acc_closeness;//*0.5;
