@@ -13,7 +13,7 @@ layout(set = 0, binding = 0) uniform Uniforms {
 // TODO: antialiasing
 
 // some inspired by http://jamie-wong.com/2016/07/15/ray-marching-signed-distance-functions/
-
+// mult by recip faster?
 
 // consts
 
@@ -29,7 +29,79 @@ const float k_ray_marching_max_dist = 100.0;
 const float k_ray_marching_epsilon = 0.0001;
 const float k_derivative_epsilon = 0.0001;
 const int k_reflection_bounces_max = 2;
+
 const vec2 k_v2 = vec2(1.0,1.0);
+const vec3 k_i = vec3(1.,0.,0.);
+const vec3 k_j = vec3(0.,1.,0.);
+const vec3 k_k = vec3(0.,0.,1.);
+
+
+// structs
+
+struct Material {
+	vec3 color;
+};
+struct SceneResult {
+	float dist;
+	Material material;
+};
+
+
+// utils
+
+vec2 rot2(in vec2 v, in float a) {
+	// [1, 0] rot PIf2 = [0, 1] = [xc, xs]
+	// [0, 1] rot PIf2 = [-1, 0] = [-ys, yc]
+	// [x, y] rot a = [(c, -s) (s, c)][x, y] = [xc-ys, xs+yc]
+	float s = sin(a);
+	float c = cos(a);
+	return vec2(v.x*c-v.y*s, v.x*s+v.y*c);
+}
+float rot_angle(in float a, in float a2) {
+	return mod(a - a2, PI2);
+}
+
+// returns in 0..<2PI?
+float angle_of_vec2(in vec2 v) {
+	// https://en.wikipedia.org/wiki/Atan2
+	// return atan(v.y/v.x)+PIf2;
+	return atan(-v.y, -v.x)+PI;
+	// return acos(dot(v, vec2(1.0, 0.0))/length(v));
+	// float a = atan(v.y/v.x);
+	// if (a < 0.0) a += PI;
+	// if (v.y < 0.0) a += PI;
+	// return a;
+}
+
+// h=0..PI2,s,b is 0..=1
+vec3 hsb(in float h, in float s, in float b) {
+	// TODO: not checked
+
+	s = 1-pow(1-s, 2); // makes it smoother, but slower?
+
+	// map h from +klyka..0..-klyka -> 0..1..0
+	// = map (rot h -klyka) from 2klyka..klyka..0 -> 0..1..0
+	// = map abs((rot h -klyka)-klyka) from klyka..0 -> 0..1
+	// = smoothstep abs((rot h -klyka)-klyka) from klyka..0
+	float klyka = PI2/3.;
+	return mix(vec3(1.,1.,1.), normalize(vec3(
+		smoothstep(klyka, 0., abs((rot_angle(h, -klyka)-klyka))),
+		smoothstep(klyka, 0., abs((rot_angle(h, -klyka+klyka)-klyka))),
+		smoothstep(klyka, 0., abs((rot_angle(h, -klyka+klyka*2.)-klyka)))
+	)), s)*b;
+
+}
+// h=0..PI2
+vec3 hue_to_rgb(in float h) {
+	return hsb(h, 1.0, 1.0);
+}
+
+
+// constructors
+
+Material Material_new(in float hue, in float saturation) {
+	return Material(hsb(hue, saturation, 1.0));
+}
 
 
 // all sdf's are from origin?
@@ -76,26 +148,47 @@ float box_sdf(in vec3 p, in vec3 size) {
 	return length(max(d, 0.0)) + min(max(max(d.x, d.y), d.z), 0.0);
 }
 
-float union_sdf(in float a, in float b) {
-	return min(a, b);
+void union_sdf(inout SceneResult base, in SceneResult added) {
+	if (added.dist <= base.dist) {
+		base = added;
+	}
 }
 
 // try k=0.1
-float union_smooth_sdf(in float a, in float b, in float k) {
-	float h = max(0, k-abs(a-b))/k;
-	return min(a, b) - h*h*k*(1.0/4.0); // mult by recip faster
+void union_smooth_sdf(inout SceneResult base, in SceneResult added, in float k) {
+	float h = max(0, k-abs(base.dist-added.dist))/k;
+	float dist = min(base.dist, added.dist) - h*h*k*(1.0/4.0);
+
+	// dist = base.dist, use base.material
+	// dist = added.dist, use added.material
+	// dist is < base.dist, added.dist
+	// if closer to base, it will be less then base, added, but will be closer to base
+	// if same dist to both, blend should be 50%
+	float bd = base.dist-dist;
+	float ad = added.dist-dist;
+	float percent_added = bd/(bd+ad); // 1-ad/(bd+ad)
+
+	base = SceneResult(dist, Material(
+		mix(base.material.color, added.material.color, percent_added)
+	));
+}
+void union_smooth_sdf(inout SceneResult base, in SceneResult added) {
+	union_smooth_sdf(base, added, 0.1);
 }
 
-float scene_sdf(in vec3 p) {
-	float r = inf;
+
+
+SceneResult scene_sdf_res(in vec3 p) {
+	Material white = Material_new(0., 0.);
+	SceneResult r = SceneResult(inf, white);
 	// r = union_sdf(r, sphere_sdf(p, mousex));
 	// r = union_sdf(r, sphere_sdf(p-vec3(.6,0.3,0.2), 0.3));
 	// r = union_smooth_sdf(r, sphere_sdf(p-vec3(-.6,0.3,0.2), 0.3), 0.3);
 
 	vec2 mp = vec2((mousex-0.5)*2.0*1.4, -2.0*(mousey-0.5)*1.1);
 	// mp = vec2(0.0,-0.3);
-	r = union_sdf(r, plane_sdf(p - vec3(0.0,1.0,0.0), normalize(vec3(0.0, -1.0, 0.0)), 0.001));
 
+	// r = union_smooth_sdf(r, sphere_sdf(p- vec3(-0.3, -0.3, -0.5), 0.23), 0.1);
 
 	// floor
 	// float offset = sin(p.x*10.0)*0.05;
@@ -112,49 +205,42 @@ float scene_sdf(in vec3 p) {
 
 	// r = union_sdf(r, plane_dist);
 
+	// walls
+	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(-1.0,0.0,0.0), normalize(vec3(1.0, 0.0, 0.0)), 0.), white));
+	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(1.0,0.0,0.0), normalize(vec3(-1.0, 0.0, 0.0)), 0.), white));
+	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,1.0,0.0), normalize(vec3(0.0, -1.0, 0.0)), 0.), white));
+	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,0.0,-2.0), normalize(vec3(0.0, 0.0, 1.0)), 0.), white));
 	// TODO: make waves radial instead?
 	float wave_offset = 0.0;
 	wave_offset += sin(p.x*1.1*10.0)*0.01;
 	wave_offset += sin(p.z*0.7*10.0)*0.02;
-	r = union_smooth_sdf(r, plane_sdf(
-		p - vec3(0.0,-1.0+wave_offset,0.0),
-		normalize(vec3(0.0, 1.0, 0.0)),
-		0.001
-	), 0.1);
-
-	// walls
-	r = union_smooth_sdf(r, plane_sdf(p - vec3(-1.0,0.0,0.0), normalize(vec3(1.0, 0.0, 0.0)), 0.001), 0.1);
-	r = union_smooth_sdf(r, plane_sdf(p - vec3(1.0,0.0,0.0), normalize(vec3(-1.0, 0.0, 0.0)), 0.001), 0.1);
-	r = union_smooth_sdf(r, plane_sdf(p - vec3(0.0,0.0,-2.0), normalize(vec3(0.0, 0.0, 1.0)), 0.001), 0.1);
+	union_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,-1.0+wave_offset,0.0), normalize(vec3(0.0, 1.0, 0.0)), 0.), Material_new(3.33, 0.5)));
 
 	// camera inside sphere?
 	// r = union_smooth_sdf(r, max(sphere_sdf(p- vec3(0.0,0.0,0.0), 3.0), -sphere_sdf(p- vec3(0.0,0.0,0.0), 2.5)), 0.3);
 
-	r = union_smooth_sdf(r, sphere_sdf(p- vec3(-0.3, -0.3, -0.5), 0.23), 0.1);
-	r = union_smooth_sdf(r, sphere_sdf(p- vec3(0.3, -0.3, -0.3), 0.23), 0.1);
-	r = union_smooth_sdf(r, sphere_sdf(p- vec3(mp.xy, -0.4), 0.23), 0.3);
+	union_smooth_sdf(r, SceneResult(sphere_sdf(p-vec3(-0.3, -0.3, -0.5), 0.23), Material_new(0., 1.)), 0.2);
+	union_smooth_sdf(r, SceneResult(sphere_sdf(p-vec3(0.3, -0.3, -0.3), 0.23), Material_new(3., 1.)), 0.2);
+	union_smooth_sdf(r, SceneResult(sphere_sdf(p-vec3(mp.xy, -0.4), 0.23), Material_new(2., 1.)), 0.2);
+
+	// r = union_smooth_sdf(r, sphere_sdf(p- vec3(mp.xy, -0.4), 0.23), 0.3);
 	// r = union_sdf(r, sphere_sdf(p-xy*0.5, 0.1));
 	// r = union_sdf(r, sphere_sdf(p-vec3(0.5), 0.1));
 
 	//r = union_sdf(r, box_sdf(p, vec3(-0.2, -0.2, -0.7), vec3(0.2, 0.1, 0.01)));
 	// r = union_smooth_sdf(r, box_sdf(p, vec3(0.5, -0.7, -0.4), vec3(0.1, 0.05, 0.2)), 0.15);
-	r = union_smooth_sdf(r, box_sdf(p-vec3(mp.xy, -0.4), vec3(0.5, 0.05, 0.05)), 0.35);
-	r = union_smooth_sdf(r, box_sdf(p-vec3(mp.xy, mp.y*1.2), vec3(0.02, 0.02, 0.4)), 0.15);
+	// r = union_smooth_sdf(r, box_sdf(p-vec3(mp.xy, -0.4), vec3(0.5, 0.05, 0.05)), 0.35);
+	// r = union_smooth_sdf(r, box_sdf(p-vec3(mp.xy, mp.y*1.2), vec3(0.02, 0.02, 0.4)), 0.15);
 
 	return r;
 }
+float scene_sdf(in vec3 p) {
+	return scene_sdf_res(p).dist;
+}
 
 vec3 scene_color(in vec3 p) {
-	vec2 mp = vec2((mousex-0.5)*2.0*1.4, -2.0*(mousey-0.5)*1.1);
-
-	float d1 = sphere_sdf(p- vec3(-0.3, -0.3, -0.5), 0.23);
-	float d2 = sphere_sdf(p- vec3(0.3, -0.3, -0.3), 0.23);
-	float d3 = sphere_sdf(p- vec3(mp.xy, -0.4), 0.23);
-
-	return vec3(
-		smoothstep(0.0, k_ray_marching_epsilon*10.0, d1),
-		smoothstep(0.0, k_ray_marching_epsilon*10.0, d2),
-		smoothstep(0.0, k_ray_marching_epsilon*10.0, d3));
+	Material material = scene_sdf_res(p).material;
+	return material.color;
 }
 
 
@@ -318,6 +404,13 @@ void main() {
 	// correct for aspect ratio
 	float aspect_ratio = raster_size.x/raster_size.y;
 	uv.x *= aspect_ratio;
+
+	// uncomment to test hsb
+	// float a = angle_of_vec2(uv);
+	// // a = rot_angle(a, angle_of_vec2(mp));
+	// frag_color = vec4(hsb(a, length(uv)*1.5, 1.0), 1.0);
+	// return;
+
 
 	// camera
 	vec3 eye_pos = vec3(.0,.0,1.5);
