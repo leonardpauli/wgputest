@@ -28,7 +28,7 @@ const float k_ray_marching_start_offset = 0.0001;
 const float k_ray_marching_max_dist = 100.0;
 const float k_ray_marching_epsilon = 0.0001;
 const float k_derivative_epsilon = 0.0001;
-const int k_reflection_bounces_max = 2;
+const int k_reflection_bounces_max = 4;
 
 const vec2 k_v2 = vec2(1.0,1.0);
 const vec3 k_i = vec3(1.,0.,0.);
@@ -172,6 +172,24 @@ void union_smooth_sdf(inout SceneResult base, in SceneResult added, in float k) 
 		mix(base.material.color, added.material.color, percent_added)
 	));
 }
+void sub_smooth_sdf(inout SceneResult base, in SceneResult added, in float k) {
+	float h = max(0, k-abs(base.dist-added.dist))/k;
+	float dist = max(base.dist, -added.dist) + h*h*k*(1.0/4.0);
+
+	// dist = base.dist, use base.material
+	// dist = added.dist, use added.material
+	// dist is < base.dist, added.dist
+	// if closer to base, it will be less then base, added, but will be closer to base
+	// if same dist to both, blend should be 50%
+	float bd = base.dist-dist;
+	float ad = added.dist-dist;
+	float percent_added = bd/(bd+ad); // 1-ad/(bd+ad)
+
+	base = SceneResult(dist, base.material
+	// use for inside material?
+	// Material(mix(base.material.color, added.material.color, percent_added))
+	);
+}
 void union_smooth_sdf(inout SceneResult base, in SceneResult added) {
 	union_smooth_sdf(base, added, 0.1);
 }
@@ -210,6 +228,7 @@ SceneResult scene_sdf_res(in vec3 p) {
 	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(1.0,0.0,0.0), normalize(vec3(-1.0, 0.0, 0.0)), 0.), white));
 	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,1.0,0.0), normalize(vec3(0.0, -1.0, 0.0)), 0.), white));
 	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,0.0,-2.0), normalize(vec3(0.0, 0.0, 1.0)), 0.), white));
+	// union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,0.0,3.0), normalize(vec3(0.0, 0.0, -1.0)), 0.), white));
 	// TODO: make waves radial instead?
 	float wave_offset = 0.0;
 	wave_offset += sin(p.x*1.1*10.0)*0.01;
@@ -219,9 +238,12 @@ SceneResult scene_sdf_res(in vec3 p) {
 	// camera inside sphere?
 	// r = union_smooth_sdf(r, max(sphere_sdf(p- vec3(0.0,0.0,0.0), 3.0), -sphere_sdf(p- vec3(0.0,0.0,0.0), 2.5)), 0.3);
 
-	union_smooth_sdf(r, SceneResult(sphere_sdf(p-vec3(-0.3, -0.3, -0.5), 0.23), Material_new(0., 1.)), 0.2);
-	union_smooth_sdf(r, SceneResult(sphere_sdf(p-vec3(0.3, -0.3, -0.3), 0.23), Material_new(3., 1.)), 0.2);
-	union_smooth_sdf(r, SceneResult(sphere_sdf(p-vec3(mp.xy, -0.4), 0.23), Material_new(2., 1.)), 0.2);
+	sub_smooth_sdf(r, SceneResult(sphere_sdf(p-vec3(mp.xy, -0.4), 0.22), Material_new(2., 1.)), 0.2);
+	SceneResult rballs = SceneResult(inf, white);
+	union_sdf(rballs, SceneResult(sphere_sdf(p-vec3(-0.3, -0.3, -0.5), 0.23), Material_new(0., 1.)));
+	union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(0.3, -0.3, -0.3), 0.23), Material_new(3., 1.)), 0.2);
+	union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(mp.xy, -0.4), 0.23), Material_new(2., 1.)));
+	union_sdf(r, rballs);
 
 	// r = union_smooth_sdf(r, sphere_sdf(p- vec3(mp.xy, -0.4), 0.23), 0.3);
 	// r = union_sdf(r, sphere_sdf(p-xy*0.5, 0.1));
@@ -271,8 +293,14 @@ vec3 scene_norm(in vec3 p) {
 	return normalize(grad);
 }
 
+struct RayMarchRes {
+	float dist;
+	float accumulated_closeness;
+	Material material;
+};
+
 // ray origin, ray direction
-vec2 dist_to_surface(in vec3 ro, in vec3 rd) {
+RayMarchRes do_raymarch(in vec3 ro, in vec3 rd) {
 
 	// for antialiasing
 	// float first_dist_within_1px = -1.0;
@@ -280,6 +308,7 @@ vec2 dist_to_surface(in vec3 ro, in vec3 rd) {
 
 	float closeness_f = 0.0005;
 	float acc_closeness = 0;
+	Material last_material = Material_new(0.,0.);
 
 	float dist = 0;
 	float step_dist;
@@ -290,7 +319,9 @@ vec2 dist_to_surface(in vec3 ro, in vec3 rd) {
 		// TODO; also, should be from closest raster pixel edge?
 		// float _1px_dist_at_z = 0.001;
 
-		step_dist = scene_sdf(ro);
+		SceneResult res = scene_sdf_res(ro);
+		last_material = res.material;
+		step_dist = res.dist;
 		dist += step_dist;
 		acc_closeness += closeness_f/step_dist;
 
@@ -312,7 +343,7 @@ vec2 dist_to_surface(in vec3 ro, in vec3 rd) {
 	// }
 
 	// return vec3(dist, first_dist_within_1px, first_dist_within_1px_p);
-	return vec2(dist, acc_closeness);
+	return RayMarchRes(dist, acc_closeness, last_material);
 }
 
 
@@ -336,6 +367,8 @@ vec4 trace_color_inner(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 	vec3 from_eye = normalize(p-eye_pos);
 	vec3 to_eye = -from_eye;
 
+	float mousex2 = 0.066;
+
 	{
 		// vec3 light_pos = vec3(0.3, 1.3,(mousex-0.5)*3.0);
 		vec3 light_pos = vec3(0.0, 0.0, 0.0);
@@ -349,8 +382,8 @@ vec4 trace_color_inner(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 		float angle_to_perfect_10 = 1-min(1, (acos(cos_angle_to_perfect)/PIf2));
 		c += angle_to_perfect_10*intensity;
 
-		float specular_intensity = 0.005/pow(mousex*10.0, 10.0);
-		float specular_shininess = 5.5*mousex*10.0;
+		float specular_intensity = 0.005/pow(mousex2*10.0, 10.0);
+		float specular_shininess = 5.5*mousex2*10.0;
 
 		float cos_angle_eye_to_reflection = dot(perfect_reflection, from_eye);
 		float angle_eye_to_reflection_10 = acos(cos_angle_eye_to_reflection)/PIf2;
@@ -369,23 +402,26 @@ vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 
 	vec4 color = vec4(0.0,0.0,0.0,0.0);
 
+	vec4 col_filter = vec4(1.,1.,1.,1.0);
+
 	for (int i = 0; i<k_reflection_bounces_max; i++) {
 		vec3 p = eye_pos + ray_dir*dist;
 		vec3 norm = scene_norm(p);
 		vec3 from_eye = normalize(p-eye_pos);
 		vec3 to_eye = -from_eye;
 
-		color += trace_color_inner(eye_pos, ray_dir, dist) * (1.0 - i/1.9);
+
+		vec4 col = trace_color_inner(eye_pos, ray_dir, dist);
+		col_filter *= col;
+		// color += col_filter*(col * (1.0 - i/1.9));
 
 		vec3 from_eye_perfect_reflect = reflect(from_eye, norm);
-		vec2 reflection_dist2 = dist_to_surface(p, from_eye_perfect_reflect);
-
+		dist = do_raymarch(p, from_eye_perfect_reflect).dist;
 		eye_pos = p;
 		ray_dir = from_eye_perfect_reflect;
-		dist = reflection_dist2.x;
 	}
 
-	return color;
+	return col_filter;
 }
 
 
@@ -421,14 +457,12 @@ void main() {
 	vec3 pixel_center = eye_pos + vec3(uv.xy + film_pixel_size.xy/2.0, -film_offset); // TODO: aspect_ratio?
 
 	vec3 ray_dir = normalize(pixel_center - eye_pos);
-	vec2 dist2 = dist_to_surface(eye_pos, ray_dir);
-	float dist = dist2.x;
-	float acc_closeness = dist2.y;
+	RayMarchRes res = do_raymarch(eye_pos, ray_dir);
 
 	// float d = box_sdf(vec3(uv, 0.0)-vec3(0.0,mp.y, mp.x), vec3(0.1,0.2,0.1));
 	// frag_color = vec4(d, d, d, 1.0);
 	// return;
 
-	frag_color = trace_color(eye_pos, ray_dir, dist);
-	if (dist > k_ray_marching_max_dist) frag_color.x += acc_closeness;//*0.5;
+	frag_color = trace_color(eye_pos, ray_dir, res.dist);
+	if (res.dist > k_ray_marching_max_dist) frag_color.x += res.accumulated_closeness;//*0.5;
 }
