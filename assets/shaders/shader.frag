@@ -229,18 +229,21 @@ SceneResult scene_sdf_res(in vec3 p) {
 	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,1.0,0.0), normalize(vec3(0.0, -1.0, 0.0)), 0.), white));
 	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,0.0,-2.0), normalize(vec3(0.0, 0.0, 1.0)), 0.), white));
 	// union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,0.0,3.0), normalize(vec3(0.0, 0.0, -1.0)), 0.), white));
+
+	sub_smooth_sdf(r, SceneResult(sphere_sdf(p-vec3(mp.xy, -0.4), 0.22), Material_new(2., 1.)), 0.2);
+	SceneResult rballs = SceneResult(inf, white);
+
 	// TODO: make waves radial instead?
 	float wave_offset = 0.0;
 	wave_offset += sin(p.x*1.1*10.0)*0.01;
 	wave_offset += sin(p.z*0.7*10.0)*0.02;
-	union_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,-1.0+wave_offset,0.0), normalize(vec3(0.0, 1.0, 0.0)), 0.), Material_new(3.33, 0.5)));
+	union_sdf(rballs, SceneResult(plane_sdf(p-vec3(0.0,-1.0+wave_offset,0.0), normalize(vec3(0.0, 1.0, 0.0)), 0.), Material_new(3.33, 0.5)));
 
 	// camera inside sphere?
 	// r = union_smooth_sdf(r, max(sphere_sdf(p- vec3(0.0,0.0,0.0), 3.0), -sphere_sdf(p- vec3(0.0,0.0,0.0), 2.5)), 0.3);
 
-	sub_smooth_sdf(r, SceneResult(sphere_sdf(p-vec3(mp.xy, -0.4), 0.22), Material_new(2., 1.)), 0.2);
-	SceneResult rballs = SceneResult(inf, white);
-	union_sdf(rballs, SceneResult(sphere_sdf(p-vec3(-0.3, -0.3, -0.5), 0.23), Material_new(0., 1.)));
+
+	union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(-0.3, -0.3, -0.5), 0.23), Material_new(0., 1.)));
 	union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(0.3, -0.3, -0.3), 0.23), Material_new(3., 1.)), 0.2);
 	union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(mp.xy, -0.4), 0.23), Material_new(2., 1.)));
 	union_sdf(r, rballs);
@@ -347,22 +350,16 @@ RayMarchRes do_raymarch(in vec3 ro, in vec3 rd) {
 }
 
 
-vec4 trace_color_inner(in vec3 eye_pos, in vec3 ray_dir, float dist) {
-	vec3 p = eye_pos + ray_dir*dist;
-	vec3 norm = scene_norm(p);
+vec4 simplified_lighting(in vec3 p, in RayMarchRes rm, in vec3 eye_pos, in vec3 ray_dir) {
+	// see phong lighting model
+	// assume rm.dist < k_ray_marching_max_dist
 
-	if (dist >= k_ray_marching_max_dist) {
-		// sky/background
-		// float c = (uv.y+0.5+0.2)*0.04;
-		// frag_color = vec4(0.0,c*0.2,c, 1.0);
-		return vec4(0.0,0.0,0.0,0.0);
-	}
+	vec3 norm = scene_norm(p);
 
 	float ambient_lighting = 0.0001;
 
 	float c = 0;
 	c += ambient_lighting;
-
 
 	vec3 from_eye = normalize(p-eye_pos);
 	vec3 to_eye = -from_eye;
@@ -390,33 +387,40 @@ vec4 trace_color_inner(in vec3 eye_pos, in vec3 ray_dir, float dist) {
 		c += pow(angle_eye_to_reflection_10, specular_shininess)*specular_intensity;
 	}
 
-	// vec4 color = vec4(c, c, c, 1.0);
-	vec3 col = scene_color(p);
-	vec4 color = vec4(col.x*c, col.y*c, col.z*c, 1.0);
-
+	vec4 color = vec4(c, c, c, 1.0);
 	return color;
-	// frag_color = vec4(norm, 1.0);
 }
 
-vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, float dist) {
+vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, in RayMarchRes rm) {
 
 	vec4 color = vec4(0.0,0.0,0.0,0.0);
 
 	vec4 col_filter = vec4(1.,1.,1.,1.0);
 
 	for (int i = 0; i<k_reflection_bounces_max; i++) {
-		vec3 p = eye_pos + ray_dir*dist;
+		if (rm.dist >= k_ray_marching_max_dist) {
+			// sky/background?
+			// float c = (uv.y+0.5+0.2)*0.04;
+			// frag_color = vec4(0.0,c*0.2,c, 1.0);
+			// vec4(0.0,0.0,0.0,0.0);
+			col_filter = vec4(0.,0.,0.,0.0);
+			break;
+		}
+
+		vec3 p = eye_pos + ray_dir*rm.dist;
 		vec3 norm = scene_norm(p);
 		vec3 from_eye = normalize(p-eye_pos);
 		vec3 to_eye = -from_eye;
 
-
-		vec4 col = trace_color_inner(eye_pos, ray_dir, dist);
+		vec4 lighting = simplified_lighting(p, rm, eye_pos, ray_dir);
+		vec4 col = vec4(rm.material.color, 1.0);//*lighting;
+		// col *= i>1?0.2:1.0;
+		// if (rm.material.color.y<0.5) col*=40.5;
 		col_filter *= col;
 		// color += col_filter*(col * (1.0 - i/1.9));
 
 		vec3 from_eye_perfect_reflect = reflect(from_eye, norm);
-		dist = do_raymarch(p, from_eye_perfect_reflect).dist;
+		rm = do_raymarch(p, from_eye_perfect_reflect);
 		eye_pos = p;
 		ray_dir = from_eye_perfect_reflect;
 	}
@@ -463,6 +467,6 @@ void main() {
 	// frag_color = vec4(d, d, d, 1.0);
 	// return;
 
-	frag_color = trace_color(eye_pos, ray_dir, res.dist);
+	frag_color = trace_color(eye_pos, ray_dir, res);
 	if (res.dist > k_ray_marching_max_dist) frag_color.x += res.accumulated_closeness;//*0.5;
 }
