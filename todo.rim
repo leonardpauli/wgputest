@@ -39,6 +39,7 @@ later:
 	quality:
 		- gamma color correction?
 		- antialiasing
+			// see: https://www.shadertoy.com/view/MdjGR1
 			if passed closeby(< 1px) mesh, lerp between first mesh + (last mesh or background) with (dist to mesh)/(1px dist (at same z))?
 			// TODO: antialiasing; use pixel_width = ...; smooth_step(x, x+pixel_width...) ?
 			// https://mortoray.com/2015/06/19/antialiasing-with-a-signed-distance-field/
@@ -66,3 +67,4 @@ done:
 
 ' links
 	https://www.iquilezles.org/www/index.htm
+	https://www.shadertoy.com/view/4djGWR
