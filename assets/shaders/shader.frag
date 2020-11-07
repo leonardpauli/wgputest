@@ -28,7 +28,7 @@ const float k_ray_marching_start_offset = 0.0001;
 const float k_ray_marching_max_dist = 100.0;
 const float k_ray_marching_epsilon = 0.0001;
 const float k_derivative_epsilon = 0.0001;
-const int k_reflection_bounces_max = 8;
+const int k_reflection_bounces_max = 5;
 
 const vec2 k_v2 = vec2(1.0,1.0);
 const vec3 k_i = vec3(1.,0.,0.);
@@ -276,7 +276,7 @@ SceneResult scene_sdf_res(in vec3 p) {
 	// r = union_smooth_sdf(r, sphere_sdf(p-vec3(-.6,0.3,0.2), 0.3), 0.3);
 
 	vec2 mp = vec2((mousex-0.5)*2.0*1.4, -2.0*(mousey-0.5)*1.1);
-	mp = vec2(0.5, 0.1);
+	// mp = vec2(0.5, 0.1);
 	// mp = vec2(0.0,-0.3);
 
 	// r = union_smooth_sdf(r, sphere_sdf(p- vec3(-0.3, -0.3, -0.5), 0.23), 0.1);
@@ -303,7 +303,9 @@ SceneResult scene_sdf_res(in vec3 p) {
 	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,0.0,-2.0), normalize(vec3(0.0, 0.0, 1.0)), 0.), white));
 	// union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,0.0,3.0), normalize(vec3(0.0, 0.0, -1.0)), 0.), white));
 
-	sub_smooth_sdf(r, SceneResult(sphere_sdf(p-vec3(mp.xy, -0.4), 0.22), Material_hs(2., 1.)), 0.2);
+	// sphere cutout
+	// sub_smooth_sdf(r, SceneResult(sphere_sdf(p-vec3(mp.xy, -0.4), 0.22), Material_hs(2., 1.)), 0.2);
+
 	SceneResult rballs = SceneResult(inf, white);
 
 	// TODO: make waves radial instead?
@@ -316,32 +318,49 @@ SceneResult scene_sdf_res(in vec3 p) {
 	// r = union_smooth_sdf(r, max(sphere_sdf(p- vec3(0.0,0.0,0.0), 3.0), -sphere_sdf(p- vec3(0.0,0.0,0.0), 2.5)), 0.3);
 
 
-	union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(-0.3, -0.3, -0.5), 0.23), Material_hs(0., 1.)));
-	union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(0.3, -0.3, -0.3), 0.23), Material_hs(PI2*0.5, 1.)), 0.2);
-	union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(mp.xy, -0.4), 0.23), Material_hs(2., 1.)));
-	union_sdf(r, rballs);
-
-	{
-		float repetition_z_interval = 0.6;
-		float lamp_h = 0.08;
-		vec3 lamp_s = vec3(.6,.02,.13);
-		vec3 lamp_p = vec3(0.,1.0,0.22+floor(p.z/repetition_z_interval)*repetition_z_interval);
-		// lamp_p.y -= (p.z-lamp_p.z)*0.8;
-		// abs trick for symmetry
-		vec3 foot_p = p-lamp_p-vec3(0.,-lamp_h+lamp_h/2.0,0.);
-		// foot_p.x = abs(foot_p.x)-lamp_s.x*0.91;
-		// foot_p.z = abs(foot_p.z)-lamp_s.z*0.91;
-		foot_p.xz = abs(foot_p.xz)-lamp_s.xz*0.91;
-		union_sdf(r, SceneResult(box_sdf(foot_p, vec3(.03, lamp_h/2., .03)), white));
-
-		union_sdf(r, SceneResult(box_sdf(p-lamp_p-vec3(0.,-lamp_h+0.008,0.), (lamp_s+vec3(0.03, .0, 0.03)-vec3(0.02)))-0.02, Material(hsb(0., 0., 1.), vec3(0.), 0.4)));
-		union_sdf(r, SceneResult(box_sdf(p-lamp_p-vec3(0.,-lamp_h,0.), lamp_s), Material(hsb(0., 0., 1.), vec3(1.), 0.)));
+	// fibonacci balls
+	#define n_max 18
+	for (int i = 0; i<n_max; i++) {
+		float n = n_max*0.4*mousex*4.;
+		vec2 p2 = vec2(i*(1.0/n), i*golden_ratio_recip);
+		float r = sqrt(p2.x);
+		float theta = PI2*p2.y;
+		p2 = rot2(vec2(r, 0.), theta);
+		union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(p2*0.55, -0.5), 0.1), Material_hs(0., 1.)), 0.15 );
 	}
 
-	union_sdf(r, SceneResult(box_sdf(p-vec3(-0.7,0.,.12), vec3(0.015,.3,.3)-0.01)-0.01, Material(hsb(PI2/3., 0., 1.), vec3(0.), .8)));
-	union_smooth_sdf(r, SceneResult(box_sdf(p-vec3(-0.3, -0.3-0.26-0.015/2, -0.5), vec3(.26,0.015,.26)-0.01)-0.01, Material(hsb(PI2/3., 0., 1.), vec3(0.), .1)), 0.05);
+	// union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(-0.3, -0.3, -0.5), 0.23), Material_hs(0., 1.)));
+	// union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(0.3, -0.3, -0.3), 0.23), Material_hs(PI2*0.5, 1.)), 0.2);
+	// union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(mp.xy, -0.4), 0.23), Material_hs(2., 1.)));
+	union_sdf(r, rballs);
 
-	sub_smooth_sdf(r, SceneResult(box_sdf(p-vec3(1.,0.,.82), vec3(0.8,.3,.6)-0.01)-0.01, Material(hsb(PI2/3., 0., 1.), vec3(0.), .8)), 0.1);
+
+	// lamps
+	// {
+	// 	float repetition_z_interval = 0.6;
+	// 	float lamp_h = 0.08;
+	// 	vec3 lamp_s = vec3(.6,.02,.13);
+	// 	vec3 lamp_p = vec3(0.,1.0,0.22+floor(p.z/repetition_z_interval)*repetition_z_interval);
+	// 	// lamp_p.y -= (p.z-lamp_p.z)*0.8;
+	// 	// abs trick for symmetry
+	// 	vec3 foot_p = p-lamp_p-vec3(0.,-lamp_h+lamp_h/2.0,0.);
+	// 	// foot_p.x = abs(foot_p.x)-lamp_s.x*0.91;
+	// 	// foot_p.z = abs(foot_p.z)-lamp_s.z*0.91;
+	// 	foot_p.xz = abs(foot_p.xz)-lamp_s.xz*0.91;
+	// 	union_sdf(r, SceneResult(box_sdf(foot_p, vec3(.03, lamp_h/2., .03)), white));
+
+	// 	union_sdf(r, SceneResult(box_sdf(p-lamp_p-vec3(0.,-lamp_h+0.008,0.), (lamp_s+vec3(0.03, .0, 0.03)-vec3(0.02)))-0.02, Material(hsb(0., 0., 1.), vec3(0.), 0.4)));
+	// 	union_sdf(r, SceneResult(box_sdf(p-lamp_p-vec3(0.,-lamp_h,0.), lamp_s), Material(hsb(0., 0., 1.), vec3(1.), 0.)));
+	// }
+
+
+	// mirror
+	// union_sdf(r, SceneResult(box_sdf(p-vec3(-0.7,0.,.12), vec3(0.015,.3,.3)-0.01)-0.01, Material(hsb(PI2/3., 0., 1.), vec3(0.), .8)));
+	// red ball platform
+	// union_smooth_sdf(r, SceneResult(box_sdf(p-vec3(-0.3, -0.3-0.26-0.015/2, -0.5), vec3(.26,0.015,.26)-0.01)-0.01, Material(hsb(PI2/3., 0., 1.), vec3(0.), .1)), 0.05);
+
+	// window cutout
+	// sub_smooth_sdf(r, SceneResult(box_sdf(p-vec3(1.,0.,.82), vec3(0.8,.3,.6)-0.01)-0.01, Material(hsb(PI2/3., 0., 1.), vec3(0.), .8)), 0.1);
 
 
 	// union_sdf(r, SceneResult(sphere_sdf(p-vec3(0.,1.,0.), 0.23), Material(hsb(0., 0., 1.), vec3(1.,1.,1.))));
@@ -454,7 +473,7 @@ vec4 simplified_lighting(in vec3 p, in RayMarchRes rm, in vec3 eye_pos, in vec3 
 
 	vec3 norm = scene_norm(p);
 
-	float ambient_lighting = 0.008*0.;
+	float ambient_lighting = 0.008;
 
 	float c = 0;
 	c += ambient_lighting;
@@ -462,13 +481,13 @@ vec4 simplified_lighting(in vec3 p, in RayMarchRes rm, in vec3 eye_pos, in vec3 
 	vec3 from_eye = normalize(p-eye_pos);
 	vec3 to_eye = -from_eye;
 
-	float mousex2 = 0.64;
+	float mousex2 = 0.72;
 
 	{
 		// vec3 light_pos = vec3(0.3, 1.3,(mousex-0.5)*3.0);
 		vec3 light_pos = vec3(0., 0., 0.);
 		// vec3 light_pos = vec3((mousex-0.5)*2.0, -2.0*(mousey-0.5), 0.0);
-		float intensity = 0.4*0.;
+		float intensity = 0.4;
 
 		vec3 from_light = normalize(p-light_pos);
 		vec3 perfect_reflection = reflect(from_light, norm);
@@ -477,7 +496,7 @@ vec4 simplified_lighting(in vec3 p, in RayMarchRes rm, in vec3 eye_pos, in vec3 
 		float angle_to_perfect_10 = 1-min(1, (acos(cos_angle_to_perfect)/PIf2));
 		c += angle_to_perfect_10*intensity;
 
-		float specular_intensity = 0.005/pow(mousex2*10.0, 10.0)*0.;
+		float specular_intensity = 0.005/pow(mousex2*10.0, 10.0);
 		float specular_shininess = 5.5*mousex2*10.0;
 
 		float cos_angle_eye_to_reflection = dot(perfect_reflection, from_eye);
@@ -514,7 +533,7 @@ vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, in RayMarchRes rm, in int ite
 		vec4 lighting = simplified_lighting(p, rm, eye_pos, ray_dir);
 		vec4 col = vec4(rm.material.color, 1.0)*lighting;
 		// col *= i>1?0.2:1.0;
-		// color += col_filter*(col * (1.0 - i/1.9));
+		color += col_filter*(col * (1.0 - i/1.9))*0.05;
 		// color += (vec4(rm.material.emission, 1.0))*col_filter;
 		// only use col on the last pass?
 		// color += col*col_filter * pow((i+1.0)/(1.0*k_reflection_bounces_max), rm.material.reflection*4.);
@@ -539,7 +558,7 @@ vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, in RayMarchRes rm, in int ite
 		vec3 rot_target = look_through_p-vec3(0.,0.,1.);
 		vec3 rot_none = vec3(0.)-vec3(0.,0.,1.);
 		vec3 rot_angles = rotation_angles_between(rot_none, rot_target);
-		ray_dir = rotate_by_angles(ray_dir, rot_angles);
+		// ray_dir = rotate_by_angles(ray_dir, rot_angles);
 	}
 
 	return color;
@@ -607,7 +626,7 @@ void main() {
 
 	float seed = mousex;
 	frag_color = vec4(0.);//trace_color(eye_pos, ray_dir, res);
-	const int k_iter_count = 50;
+	const int k_iter_count = 1;
 	for (int i = 0; i<k_iter_count; i++) {
 		frag_color += trace_color(eye_pos, ray_dir, res, i, k_iter_count, seed)*(1.0/k_iter_count);
 	}
