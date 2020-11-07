@@ -28,13 +28,48 @@ const float k_ray_marching_start_offset = 0.0001;
 const float k_ray_marching_max_dist = 100.0;
 const float k_ray_marching_epsilon = 0.0001;
 const float k_derivative_epsilon = 0.0001;
-const int k_reflection_bounces_max = 1;
+const int k_reflection_bounces_max = 8;
 
 const vec2 k_v2 = vec2(1.0,1.0);
 const vec3 k_i = vec3(1.,0.,0.);
 const vec3 k_j = vec3(0.,1.,0.);
 const vec3 k_k = vec3(0.,0.,1.);
 #define vec3zero vec3(0.,0.,0.)
+
+
+// external
+
+// https://stackoverflow.com/questions/4200224/random-noise-functions-for-glsl
+// A single iteration of Bob Jenkins' One-At-A-Time hashing algorithm.
+uint hash( uint x ) {
+    x += ( x << 10u );
+    x ^= ( x >>  6u );
+    x += ( x <<  3u );
+    x ^= ( x >> 11u );
+    x += ( x << 15u );
+    return x;
+}
+// Compound versions of the hashing algorithm I whipped together.
+uint hash( uvec2 v ) { return hash( v.x ^ hash(v.y)                         ); }
+uint hash( uvec3 v ) { return hash( v.x ^ hash(v.y) ^ hash(v.z)             ); }
+uint hash( uvec4 v ) { return hash( v.x ^ hash(v.y) ^ hash(v.z) ^ hash(v.w) ); }
+// Construct a float with half-open range [0:1] using low 23 bits.
+// All zeroes yields 0.0, all ones yields the next smallest representable value below 1.0.
+float floatConstruct( uint m ) {
+    const uint ieeeMantissa = 0x007FFFFFu; // binary32 mantissa bitmask
+    const uint ieeeOne      = 0x3F800000u; // 1.0 in IEEE binary32
+
+    m &= ieeeMantissa;                     // Keep only mantissa bits (fractional part)
+    m |= ieeeOne;                          // Add fractional part to 1.0
+
+    float  f = uintBitsToFloat( m );       // Range [1:2]
+    return f - 1.0;                        // Range [0:1]
+}
+// Pseudo-random value in half-open range [0:1].
+float random( float x ) { return floatConstruct(hash(floatBitsToUint(x))); }
+float random( vec2  v ) { return floatConstruct(hash(floatBitsToUint(v))); }
+float random( vec3  v ) { return floatConstruct(hash(floatBitsToUint(v))); }
+float random( vec4  v ) { return floatConstruct(hash(floatBitsToUint(v))); }
 
 
 // structs
@@ -52,18 +87,18 @@ struct SceneResult {
 
 // utils
 
-vec2 rot2(in vec2 v, in float a) {
-	// [1, 0] rot PIf2 = [0, 1] = [xc, xs]
-	// [0, 1] rot PIf2 = [-1, 0] = [-ys, yc]
-	// [x, y] rot a = [(c, -s) (s, c)][x, y] = [xc-ys, xs+yc]
-	float s = sin(a);
-	float c = cos(a);
-	return vec2(v.x*c-v.y*s, v.x*s+v.y*c);
+mat4 rotation_matrix_for_angles(in vec3 angles) {
+	vec3 s = sin(angles);
+	vec3 c = cos(angles);
+	mat4 xrot = mat4(1.,0.,0.,0.,    0.,c.x,-s.x,0., 0.,s.x,c.x,0.,  0.,0.,0.,1.);
+	mat4 yrot = mat4(c.y,0.,s.y,0.,  0.,1.,0.,0.,    -s.y,0.,c.y,0., 0.,0.,0.,1.);
+	mat4 zrot = mat4(c.z,-s.z,0.,0., s.z,c.z,0.,0.,  0.,0.,1.,0.,    0.,0.,0.,1.);
+	return xrot*yrot*zrot;
 }
+
 float rot_angle(in float a, in float a2) {
 	return mod(a - a2, PI2);
 }
-
 // returns in 0..<2PI?
 float angle_of_vec2(in vec2 v) {
 	// https://en.wikipedia.org/wiki/Atan2
@@ -75,6 +110,28 @@ float angle_of_vec2(in vec2 v) {
 	// if (v.y < 0.0) a += PI;
 	// return a;
 }
+
+vec2 rot2(in vec2 v, in float a) {
+	// [1, 0] rot PIf2 = [0, 1] = [xc, xs]
+	// [0, 1] rot PIf2 = [-1, 0] = [-ys, yc]
+	// [x, y] rot a = [(c, -s) (s, c)][x, y] = [xc-ys, xs+yc]
+	float s = sin(a);
+	float c = cos(a);
+	return vec2(v.x*c-v.y*s, v.x*s+v.y*c);
+}
+vec3 rotate_by_angles(in vec3 v, in vec3 a) {
+	return (rotation_matrix_for_angles(a)*vec4(v, 1.0)).xyz;
+}
+
+vec3 rotation_angles_between(in vec3 a, in vec3 b) {
+	return vec3(
+		angle_of_vec2(b.yz)-angle_of_vec2(a.yz),
+		angle_of_vec2(b.xz)-angle_of_vec2(a.xz),
+		angle_of_vec2(b.xy)-angle_of_vec2(a.xy)
+	);
+}
+
+
 
 // h=0..PI2,s,b is 0..=1
 vec3 hsb(in float h, in float s, in float b) {
@@ -98,6 +155,12 @@ vec3 hsb(in float h, in float s, in float b) {
 vec3 hue_to_rgb(in float h) {
 	return hsb(h, 1.0, 1.0);
 }
+
+const float golden_ratio = (1.0 + sqrt(5.0))*0.5;
+const float golden_ratio_recip = 1.0/golden_ratio;
+// vec2 p = vec2(i*(1.0/n), i*golden_ratio_recip);
+// // p.y = p.y - floor(p.y*(1.0/grid_height))*grid_height; // for grid (origin: 0,0 size: 1,1)
+// p = rot2(vec2(sqrt(p.x), 0.), PI2*p.y); // r: 0..1
 
 
 // constructors
@@ -213,6 +276,7 @@ SceneResult scene_sdf_res(in vec3 p) {
 	// r = union_smooth_sdf(r, sphere_sdf(p-vec3(-.6,0.3,0.2), 0.3), 0.3);
 
 	vec2 mp = vec2((mousex-0.5)*2.0*1.4, -2.0*(mousey-0.5)*1.1);
+	mp = vec2(0.5, 0.1);
 	// mp = vec2(0.0,-0.3);
 
 	// r = union_smooth_sdf(r, sphere_sdf(p- vec3(-0.3, -0.3, -0.5), 0.23), 0.1);
@@ -390,7 +454,7 @@ vec4 simplified_lighting(in vec3 p, in RayMarchRes rm, in vec3 eye_pos, in vec3 
 
 	vec3 norm = scene_norm(p);
 
-	float ambient_lighting = 0.008;
+	float ambient_lighting = 0.008*0.;
 
 	float c = 0;
 	c += ambient_lighting;
@@ -404,7 +468,7 @@ vec4 simplified_lighting(in vec3 p, in RayMarchRes rm, in vec3 eye_pos, in vec3 
 		// vec3 light_pos = vec3(0.3, 1.3,(mousex-0.5)*3.0);
 		vec3 light_pos = vec3(0., 0., 0.);
 		// vec3 light_pos = vec3((mousex-0.5)*2.0, -2.0*(mousey-0.5), 0.0);
-		float intensity = 0.4;
+		float intensity = 0.4*0.;
 
 		vec3 from_light = normalize(p-light_pos);
 		vec3 perfect_reflection = reflect(from_light, norm);
@@ -413,7 +477,7 @@ vec4 simplified_lighting(in vec3 p, in RayMarchRes rm, in vec3 eye_pos, in vec3 
 		float angle_to_perfect_10 = 1-min(1, (acos(cos_angle_to_perfect)/PIf2));
 		c += angle_to_perfect_10*intensity;
 
-		float specular_intensity = 0.005/pow(mousex2*10.0, 10.0);
+		float specular_intensity = 0.005/pow(mousex2*10.0, 10.0)*0.;
 		float specular_shininess = 5.5*mousex2*10.0;
 
 		float cos_angle_eye_to_reflection = dot(perfect_reflection, from_eye);
@@ -425,7 +489,7 @@ vec4 simplified_lighting(in vec3 p, in RayMarchRes rm, in vec3 eye_pos, in vec3 
 	return color;
 }
 
-vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, in RayMarchRes rm) {
+vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, in RayMarchRes rm, in int iter_nr, in int iter_count, in float seed) {
 
 	vec4 color = vec4(0.);
 	vec4 col_filter = vec4(1.);
@@ -451,16 +515,31 @@ vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, in RayMarchRes rm) {
 		vec4 col = vec4(rm.material.color, 1.0)*lighting;
 		// col *= i>1?0.2:1.0;
 		// color += col_filter*(col * (1.0 - i/1.9));
-		color += (vec4(rm.material.emission, 1.0))*col_filter;
+		// color += (vec4(rm.material.emission, 1.0))*col_filter;
 		// only use col on the last pass?
-		color += col*col_filter * pow((i+1.0)/(1.0*k_reflection_bounces_max), rm.material.reflection*4.);
-		// if (i==k_reflection_bounces_max-(rm.material.reflection<0.5?20:1)) color += col*col_filter;
-		col_filter *= col;
+		// color += col*col_filter * pow((i+1.0)/(1.0*k_reflection_bounces_max), rm.material.reflection*4.);
+
+		color += col_filter*vec4(rm.material.emission, 1.0);
+
+		// if (i==k_reflection_bounces_max-(rm.material.reflectionr<0.5?20:1)) color += col*col_filter;
+		col_filter *= vec4(rm.material.color, 1.0);
 
 		vec3 from_eye_perfect_reflect = reflect(from_eye, norm);
 		rm = do_raymarch(p, from_eye_perfect_reflect);
 		eye_pos = p;
 		ray_dir = from_eye_perfect_reflect;
+		// ray_dir = vec3(rot2(ray_dir.xy, random(vec4(ray_dir, iter_nr*1.0))*0.2), ray_dir.z);
+
+
+		iter_count = 300;
+		float iter_nr_f = random(vec4(ray_dir.x, i*1.0, iter_nr, seed))*iter_count;
+		vec2 golden = vec2(iter_nr_f*(1.0/iter_count), iter_nr_f*golden_ratio_recip);
+		golden = rot2(vec2(sqrt(golden.x), 0.), PI2*golden.y); // inside circle of radius 1
+		vec3 look_through_p = vec3(golden, 0.);
+		vec3 rot_target = look_through_p-vec3(0.,0.,1.);
+		vec3 rot_none = vec3(0.)-vec3(0.,0.,1.);
+		vec3 rot_angles = rotation_angles_between(rot_none, rot_target);
+		ray_dir = rotate_by_angles(ray_dir, rot_angles);
 	}
 
 	return color;
@@ -492,9 +571,26 @@ void main() {
 	// frag_color = vec4(floor(uv.x/0.1)*0.1);
 	// return;
 
+	// golden ratio demo
+	// frag_color = vec4(vec3(0.), 1.);
+	// #define n_max 30
+	// for (int i = 0; i<n_max; i++) {
+	// 	float n = n_max;
+	// 	vec2 p = vec2(i*(1.0/n), i*golden_ratio_recip);
+	// 	// square grid
+	// 	// p.y = p.y - floor(p.y);
+	// 	// frag_color.rgb += vec3(1-smoothstep(0.03, 0.04, length(p-uv*2.2)));
+	// 	// circular/spiral
+	// 	float r = sqrt(p.x);
+	// 	float theta = PI2*p.y;
+	// 	p = rot2(vec2(r*4.7, 0.), theta);
+	// 	frag_color.rgb += vec3(1-smoothstep(0., 0.12, length(p-uv*10.)))*(1-smoothstep(0., n, i*1.));
+	// }
+	// return;
+
 
 	// camera
-	vec3 eye_pos = vec3(.0,.0,1.5*2*mp.y);
+	vec3 eye_pos = vec3(.0,.0,1.5);
 	float film_offset = 1.0;//+mp.x;
 	float film_width = 1.0;
 
@@ -502,14 +598,19 @@ void main() {
 	vec3 pixel_center = eye_pos + vec3(uv.xy + film_pixel_size.xy/2.0, -film_offset); // TODO: aspect_ratio?
 
 	vec3 ray_dir = normalize(pixel_center - eye_pos);
-	ray_dir.xz = rot2(ray_dir.xz, PI2*mp.x);
+	// ray_dir.xz = rot2(ray_dir.xz, PI2*mp.x);
 	RayMarchRes res = do_raymarch(eye_pos, ray_dir);
 
 	// float d = box_sdf(vec3(uv, 0.0)-vec3(0.0,mp.y, mp.x), vec3(0.1,0.2,0.1));
 	// frag_color = vec4(d, d, d, 1.0);
 	// return;
 
-	frag_color = trace_color(eye_pos, ray_dir, res);
+	float seed = mousex;
+	frag_color = vec4(0.);//trace_color(eye_pos, ray_dir, res);
+	const int k_iter_count = 50;
+	for (int i = 0; i<k_iter_count; i++) {
+		frag_color += trace_color(eye_pos, ray_dir, res, i, k_iter_count, seed)*(1.0/k_iter_count);
+	}
 	if (res.dist > k_ray_marching_max_dist) frag_color.x += res.accumulated_closeness;//*0.5;
 
 	// gamma correct

@@ -1,8 +1,5 @@
 // starting point inspired from wgpu/examples/hello-triangle
 
-// TODO: read all vscode hover doc boxes
-// TODO: online/built-in compilation of shader.*
-
 use bytemuck;
 use winit::{
 	event::{Event, WindowEvent},
@@ -340,10 +337,10 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 			}=> {
 				let position: winit::dpi::PhysicalPosition<_> = position;
 
-				frag_uniforms.mousex = (position.x as f32)/(WINDOW_SIZE_PHYSICAL.0 as f32);
-				frag_uniforms.mousey = (position.y as f32)/(WINDOW_SIZE_PHYSICAL.1 as f32);
+				frag_uniforms.mousex = (position.x as f32)/(frag_uniforms.window_size_physical_x as f32);
+				frag_uniforms.mousey = (position.y as f32)/(frag_uniforms.window_size_physical_y as f32);
 				queue.write_buffer(&frag_uniforms_buf, 0, bytemuck::cast_slice(&[frag_uniforms]));
-				window.request_redraw();
+				// window.request_redraw();
 
 				// println!("{:?}", position.x);
 			},
@@ -352,10 +349,14 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 				..
 			} => {
 				// Recreate the swap chain with the new size
+
+				frag_uniforms.window_size_physical_x = size.width;
+				frag_uniforms.window_size_physical_y = size.height;
+
 				sc_desc.width = size.width;
 				sc_desc.height = size.height;
 				swap_chain = device.create_swap_chain(&surface, &sc_desc);
-				window.request_redraw();
+				// window.request_redraw();
 			}
 			Event::RedrawRequested(_) => {
 				let frame = swap_chain

@@ -44,6 +44,10 @@ later:
 			// TODO: antialiasing; use pixel_width = ...; smooth_step(x, x+pixel_width...) ?
 			// https://mortoray.com/2015/06/19/antialiasing-with-a-signed-distance-field/
 			// https://drewcassidy.me/2020/06/26/sdf-antialiasing/
+		- fps counter
+		- render thumbnail/very small version (ca 100x100px), compare with last, to determine which areas to re-render
+		- diffuse using fibonacii distribution
+			// see http://extremelearning.com.au/evenly-distributing-points-on-a-sphere/
 	effects:
 		- particle simulation using compute shader
 		- electrical discharge / lightning simulation
@@ -68,3 +72,6 @@ done:
 ' links
 	https://www.iquilezles.org/www/index.htm
 	https://www.shadertoy.com/view/4djGWR
+
+// TODO: read all vscode hover doc boxes
+// TODO: online/built-in compilation of shader.*
