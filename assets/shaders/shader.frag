@@ -28,7 +28,7 @@ const float k_ray_marching_start_offset = 0.0001;
 const float k_ray_marching_max_dist = 100.0;
 const float k_ray_marching_epsilon = 0.0001;
 const float k_derivative_epsilon = 0.0001;
-const int k_reflection_bounces_max = 5;
+const int k_reflection_bounces_max = 4;
 
 const vec2 k_v2 = vec2(1.0,1.0);
 const vec3 k_i = vec3(1.,0.,0.);
@@ -301,7 +301,7 @@ SceneResult scene_sdf_res(in vec3 p) {
 	union_smooth_sdf(r, SceneResult(box_sdf(p-vec3(1.0+0.01,0.0,0.0), vec3(0.02,10.,10.)), white));
 	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,1.0,0.0), normalize(vec3(0.0, -1.0, 0.0)), 0.), white));
 	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,0.0,-2.0), normalize(vec3(0.0, 0.0, 1.0)), 0.), white));
-	// union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,0.0,3.0), normalize(vec3(0.0, 0.0, -1.0)), 0.), white));
+	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,0.0,3.0), normalize(vec3(0.0, 0.0, -1.0)), 0.), white));
 
 	// sphere cutout
 	// sub_smooth_sdf(r, SceneResult(sphere_sdf(p-vec3(mp.xy, -0.4), 0.22), Material_hs(2., 1.)), 0.2);
@@ -312,21 +312,21 @@ SceneResult scene_sdf_res(in vec3 p) {
 	float wave_offset = 0.0;
 	wave_offset += sin(p.x*1.1*10.0)*0.01;
 	wave_offset += sin(p.z*0.7*10.0)*0.02;
-	union_sdf(rballs, SceneResult(plane_sdf(p-vec3(0.0,-1.0+wave_offset,0.0), normalize(vec3(0.0, 1.0, 0.0)), 0.), Material_hs(3.33, 0.5)));
+	// union_sdf(rballs, SceneResult(plane_sdf(p-vec3(0.0,-1.0+wave_offset,0.0), normalize(vec3(0.0, 1.0, 0.0)), 0.), Material_hs(3.33, 0.5)));
 
 	// camera inside sphere?
 	// r = union_smooth_sdf(r, max(sphere_sdf(p- vec3(0.0,0.0,0.0), 3.0), -sphere_sdf(p- vec3(0.0,0.0,0.0), 2.5)), 0.3);
 
 
 	// fibonacci balls
-	#define n_max 18
+	#define n_max 28
 	for (int i = 0; i<n_max; i++) {
-		float n = n_max*0.4*mousex*4.;
+		float n = n_max*0.4;
 		vec2 p2 = vec2(i*(1.0/n), i*golden_ratio_recip);
 		float r = sqrt(p2.x);
 		float theta = PI2*p2.y;
 		p2 = rot2(vec2(r, 0.), theta);
-		union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(p2*0.55, -0.5), 0.1), Material_hs(0., 1.)), 0.15 );
+		union_sdf(rballs, SceneResult(sphere_sdf(p-vec3(p2*1.1, -0.5+random(p2)*0.6), 0.17), Material(hsb(i/n*PI2*0.05, 0.6, 1.0), vec3(smoothstep(13.,15., i)), 1.0)));
 	}
 
 	// union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(-0.3, -0.3, -0.5), 0.23), Material_hs(0., 1.)));
