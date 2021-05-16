@@ -12,12 +12,24 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 
 use std::io::Read;
+use std::path::{Path, PathBuf};
+// use std::io::prelude::*;
 
 
 const WINDOW_SIZE_PHYSICAL: (u32, u32) = (1400/2, 1000/2);
 
 
 fn main() {
+	
+	let parent = std::env::current_exe().unwrap();
+	let parent = parent.parent().unwrap();
+	let assets_dir = if parent.file_name().unwrap().to_str().unwrap() == "MacOS" {
+		parent.parent().unwrap().join(Path::new("Resources")).join(Path::new("assets"))
+	} else {
+		// std::path::PathBuf::from("assets")
+		std::env::current_dir().unwrap().join(Path::new("assets"))
+	};
+
 	let event_loop = EventLoop::new();
 	let window = winit::window::WindowBuilder::new()
 		.with_inner_size(winit::dpi::PhysicalSize::new(WINDOW_SIZE_PHYSICAL.0, WINDOW_SIZE_PHYSICAL.1))
@@ -27,7 +39,7 @@ fn main() {
 	{
 		// subscriber::initialize_default_subscriber(None);
 		// Temporarily avoid srgb formats for the swapchain on the web
-		futures::executor::block_on(run(event_loop, window, wgpu::TextureFormat::Bgra8UnormSrgb));
+		futures::executor::block_on(run(event_loop, window, wgpu::TextureFormat::Bgra8UnormSrgb, &assets_dir));
 	}
 	// #[cfg(target_arch = "wasm32")]
 	// {
@@ -82,7 +94,7 @@ impl Uniforms {
 	}
 }
 
-async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::TextureFormat) {
+async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::TextureFormat, assets_dir: &PathBuf) {
 	let size = window.inner_size();
 	let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
 	let surface = unsafe { instance.create_surface(&window) };
@@ -162,14 +174,11 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 	let wr = std::sync::Arc::from(window);
 	let window = wr.clone();
 
+	let shaders_source_dir = assets_dir.join(Path::new("shaders"));
+	let asset_gen_spv_dir = assets_dir.join(Path::new("gen/spv"));
 
-	const ASSET_GEN_SPV_DIR_STR: &str = "assets/gen/spv";
-	const SHADER_SRC_DIR_STR: &str = "assets/shaders";
-	let shaders_source_dir = std::path::Path::new(SHADER_SRC_DIR_STR);
-	let asset_gen_spv_dir = std::path::Path::new(ASSET_GEN_SPV_DIR_STR);
-
-	fn compile_shader_at_path(p: &std::path::PathBuf) {
-		let dir = std::path::Path::new(ASSET_GEN_SPV_DIR_STR);
+	let shaders_source_dir2 = shaders_source_dir.clone();
+	fn compile_shader_at_path(dir: &PathBuf, p: &std::path::PathBuf) {
 		let name = p.components().last().unwrap();
 		let source = p.to_str().unwrap();
 		let target = dir.join(name);
@@ -194,14 +203,13 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 	}
 
 	if !asset_gen_spv_dir.is_dir() {
-		let dir = asset_gen_spv_dir;
-		std::fs::create_dir_all(dir).unwrap();
+		std::fs::create_dir_all(&asset_gen_spv_dir).unwrap();
 
-		for entry in std::fs::read_dir(shaders_source_dir).unwrap().map(|x| x.unwrap()) {
+		for entry in std::fs::read_dir(shaders_source_dir2).unwrap().map(|x| x.unwrap()) {
 			let entry: std::fs::DirEntry = entry;
 			let ignore = entry.file_name().to_str().unwrap().starts_with(".");
 			if ignore {continue;}
-			compile_shader_at_path(&entry.path());
+			compile_shader_at_path(&asset_gen_spv_dir, &entry.path());
 		}
 
 	}
@@ -210,6 +218,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 	let render_pipeline_needs_update1 = std::sync::Arc::new(render_pipeline_needs_update);
 	let render_pipeline_needs_update2 = std::sync::Arc::clone(&render_pipeline_needs_update1);
 
+	let asset_gen_spv_dir2 = asset_gen_spv_dir.clone();
 	let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |res| match res {
 		Ok(event) => {
 			let event: notify::Event = event;
@@ -221,7 +230,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 					for p in event.paths.iter() {
 						let p: &std::path::PathBuf = p;
 						let p = p.canonicalize().unwrap();
-						compile_shader_at_path(&p);
+						compile_shader_at_path(&asset_gen_spv_dir2, &p);
 					}
 					*render_pipeline_needs_update1.lock().unwrap() = true;
 					wr.request_redraw();
@@ -240,6 +249,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 	let mut fs_module: Option<wgpu::ShaderModule> = None;
 	let mut render_pipeline: Option<wgpu::RenderPipeline> = None;
 
+	let asset_gen_spv_dir = asset_gen_spv_dir.clone();
 	event_loop.run(move |event, _, control_flow| {
 		// println!("{:?}", event);
 
@@ -275,8 +285,8 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 			*render_pipeline_needs_update = false;
 
 			let start = std::time::Instant::now();
-			vs_module = Some(load_shader_module(&device, "assets/gen/spv/shader.vert"));
-			fs_module = Some(load_shader_module(&device, "assets/gen/spv/shader.frag"));
+			vs_module = Some(load_shader_module(&device, asset_gen_spv_dir.join("shader.vert")));
+			fs_module = Some(load_shader_module(&device, asset_gen_spv_dir.join("shader.frag")));
 			println!("shader.load x2 ({}ms)", start.elapsed().as_millis());
 
 			let start = std::time::Instant::now();
