@@ -28,9 +28,11 @@ const float k_ray_marching_start_offset = 0.0001;
 const float k_ray_marching_max_dist = 100.0;
 const float k_ray_marching_epsilon = 0.0001;
 const float k_derivative_epsilon = 0.0001;
-const int k_reflection_bounces_max = 2;
-const int k_iter_count = 2;
-const bool k_plastic = true;
+const int k_reflection_bounces_max = 4;
+const int k_iter_count = 10;
+#define k_fib_diffuse 1
+#define k_fib_diffuse_count 20 // should be higher than k_iter_count
+#define k_plastic 0
 
 const vec2 k_v2 = vec2(1.0,1.0);
 const vec3 k_i = vec3(1.,0.,0.);
@@ -548,9 +550,9 @@ vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, in RayMarchRes rm, in int ite
 		vec4 col = vec4(rm.material.color, 1.0)*lighting;
 		// col *= i>1?0.2:1.0;
 
-		if (k_plastic) {
-			color += col_filter*(col * (1.0 - i/1.9))*0.05;
-		}
+		#if k_plastic
+		color += col_filter*(col * (1.0 - i/1.9))*0.05;
+		#endif
 
 		// color += col_filter*col*0.2;
 
@@ -569,9 +571,9 @@ vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, in RayMarchRes rm, in int ite
 		ray_dir = from_eye_perfect_reflect;
 		// ray_dir = vec3(rot2(ray_dir.xy, random(vec4(ray_dir, iter_nr*1.0))*0.2), ray_dir.z);
 
-		/*
+		#if k_fib_diffuse
 		// add fibonacci based diffuse?
-		iter_count = 300;
+		iter_count = k_fib_diffuse_count;
 		float iter_nr_f = random(vec4(ray_dir.x, i*1.0, iter_nr, seed))*iter_count;
 		vec2 golden = vec2(iter_nr_f*(1.0/iter_count), iter_nr_f*golden_ratio_recip);
 		golden = rot2(vec2(sqrt(golden.x), 0.), PI2*golden.y); // inside circle of radius 1
@@ -580,7 +582,7 @@ vec4 trace_color(in vec3 eye_pos, in vec3 ray_dir, in RayMarchRes rm, in int ite
 		vec3 rot_none = vec3(0.)-vec3(0.,0.,1.);
 		vec3 rot_angles = rotation_angles_between(rot_none, rot_target);
 		ray_dir = rotate_by_angles(ray_dir*0.1, rot_angles);
-		*/
+		#endif
 	}
 
 	// color.xyz *= is_boll;
