@@ -28,11 +28,11 @@ const float k_ray_marching_start_offset = 0.0001;
 const float k_ray_marching_max_dist = 100.0;
 const float k_ray_marching_epsilon = 0.0001;
 const float k_derivative_epsilon = 0.0001;
-const int k_reflection_bounces_max = 4;
-const int k_iter_count = 10;
-#define k_fib_diffuse 1
-#define k_fib_diffuse_count 20 // should be higher than k_iter_count
-#define k_plastic 0
+const int k_reflection_bounces_max = 3;
+const int k_iter_count = 2;
+#define k_fib_diffuse 0
+#define k_fib_diffuse_count 1000 // should be higher than k_iter_count
+#define k_plastic 1
 
 const vec2 k_v2 = vec2(1.0,1.0);
 const vec3 k_i = vec3(1.,0.,0.);
@@ -344,7 +344,7 @@ SceneResult scene_sdf_res(in vec3 p) {
 
 
 	Material blue_ball_mat = Material(hsb(PI2*0.5, 1., 1.0), vec3zero, 1.0, 1.0);
-	union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(0.3, -0.3, -0.3), 0.23), blue_ball_mat), 0.2);
+	union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(0.3, -0.3, -0.3), 0.23), blue_ball_mat), 0.8);
 	union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(mp.xy, -0.4), 0.23), Material_hs(2., 1.)));
 	union_smooth_sdf(r, rballs, 0.2);
 
@@ -619,7 +619,7 @@ void main() {
 
 	// golden ratio demo
 	// frag_color = vec4(vec3(0.), 1.);
-	// #define n_max 30
+	// #define n_max 330
 	// for (int i = 0; i<n_max; i++) {
 	// 	float n = n_max;
 	// 	vec2 p = vec2(i*(1.0/n), i*golden_ratio_recip);
