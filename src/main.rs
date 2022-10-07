@@ -39,7 +39,7 @@ fn main() {
 	{
 		// subscriber::initialize_default_subscriber(None);
 		// Temporarily avoid srgb formats for the swapchain on the web
-		futures::executor::block_on(run(event_loop, window, wgpu::TextureFormat::Bgra8UnormSrgb, &assets_dir));
+		futures::executor::block_on(run(event_loop, window, &assets_dir));
 	}
 	// #[cfg(target_arch = "wasm32")]
 	// {
@@ -70,6 +70,7 @@ fn load_shader_module<'a, P: AsRef<std::path::Path>>(
 	let mut buf = Vec::new();
 	file.unwrap().read_to_end(&mut buf).unwrap();
 	let res = wgpu::util::make_spirv(&buf[0..]);
+	let res = wgpu::ShaderModuleDescriptor { label: None, source: res };
 	device.create_shader_module(res)
 }
 
@@ -94,15 +95,16 @@ impl Uniforms {
 	}
 }
 
-async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::TextureFormat, assets_dir: &PathBuf) {
+async fn run(event_loop: EventLoop<()>, window: Window, assets_dir: &PathBuf) {
 	let size = window.inner_size();
-	let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
+	let instance = wgpu::Instance::new(wgpu::Backends::all());
 	let surface = unsafe { instance.create_surface(&window) };
 
 	let adapter = instance
 		.request_adapter(&wgpu::RequestAdapterOptions {
 			power_preference: wgpu::PowerPreference::default(),
 			compatible_surface: Some(&surface),
+			force_fallback_adapter: false,
 		})
 		.await
 		.expect("Failed to find an appropiate adapter");
@@ -110,9 +112,9 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 	let (device, queue) = adapter
 		.request_device(
 			&wgpu::DeviceDescriptor {
+				label: None,
 				features: wgpu::Features::empty(),
 				limits: wgpu::Limits::default(),
-				shader_validation: true,
 			},
 			None,
 		)
@@ -125,9 +127,10 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 		entries: &[
 			wgpu::BindGroupLayoutEntry {
 				binding: 0,
-				visibility: wgpu::ShaderStage::FRAGMENT,
-				ty: wgpu::BindingType::UniformBuffer {
-					dynamic: false,
+				visibility: wgpu::ShaderStages::FRAGMENT,
+				ty: wgpu::BindingType::Buffer {
+					ty: wgpu::BufferBindingType::Uniform,
+					has_dynamic_offset: false,
 					min_binding_size: None, // wgpu::BufferSize::new(std::mem::size_of::<f64>() as _),
 				},
 				count: None,
@@ -139,7 +142,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 	let frag_uniforms_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 		label: Some("frag_uniforms"),
 		contents: bytemuck::cast_slice(&[frag_uniforms]),
-		usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+		usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
 	});
 
 	let frag_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -148,7 +151,8 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 		entries: &[
 			wgpu::BindGroupEntry {
 				binding: 0,
-				resource: wgpu::BindingResource::Buffer(frag_uniforms_buf.slice(..)),
+				resource: frag_uniforms_buf.as_entire_binding(),
+				// resource: wgpu::BindingResource::Buffer(frag_uniforms_buf.slice(..)),
 			},
 		],
 	});
@@ -161,15 +165,16 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 		push_constant_ranges: &[],
 	});
 
-	let mut sc_desc = wgpu::SwapChainDescriptor {
-		usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-		format: swapchain_format,
+	let swapchain_format = surface.get_supported_formats(&adapter)[0];
+	let mut config = wgpu::SurfaceConfiguration {
+		usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+		format: swapchain_format.clone(),
 		width: size.width,
 		height: size.height,
-		present_mode: wgpu::PresentMode::Mailbox,
+		present_mode: wgpu::PresentMode::Fifo,
+		alpha_mode: wgpu::CompositeAlphaMode::Opaque,
 	};
-
-	let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
+	surface.configure(&device, &config);
 
 	let wr = std::sync::Arc::from(window);
 	let window = wr.clone();
@@ -219,7 +224,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 	let render_pipeline_needs_update2 = std::sync::Arc::clone(&render_pipeline_needs_update1);
 
 	let asset_gen_spv_dir2 = asset_gen_spv_dir.clone();
-	let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |res| match res {
+	let mut watcher: RecommendedWatcher = notify::recommended_watcher(move |res| match res {
 		Ok(event) => {
 			let event: notify::Event = event;
 
@@ -242,7 +247,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 	})
 	.unwrap();
 	watcher
-		.watch(shaders_source_dir, RecursiveMode::Recursive)
+		.watch(&shaders_source_dir, RecursiveMode::Recursive)
 		.unwrap();
 
 	let mut vs_module: Option<wgpu::ShaderModule> = None;
@@ -293,26 +298,53 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 			render_pipeline = Some(device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
 				label: None,
 				layout: Some(&pipeline_layout),
-				vertex_stage: wgpu::ProgrammableStageDescriptor {
+				vertex: wgpu::VertexState {
 					module: &vs_module.as_ref().unwrap(),
 					entry_point: "main",
+					buffers: &[],
 				},
-				fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+				fragment: Some(wgpu::FragmentState {
 					module: &fs_module.as_ref().unwrap(),
 					entry_point: "main",
+					targets: &[Some(swapchain_format.into())],
 				}),
+				primitive: wgpu::PrimitiveState {
+					topology: wgpu::PrimitiveTopology::TriangleList,
+					strip_index_format: None, // Some(wgpu::IndexFormat::Uint16),
+					front_face: wgpu::FrontFace::Ccw,
+					cull_mode: None, // wgpu::Face::Back,
+					unclipped_depth: false,
+					polygon_mode: wgpu::PolygonMode::Fill,
+					conservative: false,
+				},
+				depth_stencil: None,
+				/*depth_stencil: Some(wgpu::DepthStencilState {
+					format: wgpu::TextureFormat::Depth32Float,
+					depth_write_enabled: false,
+					depth_compare: wgpu::CompareFunction::Less,
+					stencil: wgpu::StencilState {
+						front: wgpu::StencilFaceState { compare: (), fail_op: (), depth_fail_op: (), pass_op: () },
+						back: (),
+						read_mask: (),
+						write_mask: (),
+					},
+					bias: (),
+				}),*/
+				multisample: wgpu::MultisampleState {
+					count: 1,
+					mask: !0,
+					alpha_to_coverage_enabled: false,
+				},
+				multiview: None,
+				/*
 				// Use the default rasterizer state: no culling, no depth bias
 				rasterization_state: None,
-				primitive_topology: wgpu::PrimitiveTopology::TriangleList,
 				color_states: &[swapchain_format.into()],
 				depth_stencil_state: None,
-				vertex_state: wgpu::VertexStateDescriptor {
-					index_format: wgpu::IndexFormat::Uint16,
-					vertex_buffers: &[],
-				},
 				sample_count: 1,
 				sample_mask: !0,
 				alpha_to_coverage_enabled: false,
+				*/
 			}));
 
 			println!("render_pipeline.created ({}ms)", start.elapsed().as_millis());
@@ -363,29 +395,38 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 				frag_uniforms.window_size_physical_x = size.width;
 				frag_uniforms.window_size_physical_y = size.height;
 
-				sc_desc.width = size.width;
-				sc_desc.height = size.height;
-				swap_chain = device.create_swap_chain(&surface, &sc_desc);
+				config.width = size.width;
+				config.height = size.height;
+				surface.configure(&device, &config);
 				// window.request_redraw();
 			}
 			Event::RedrawRequested(_) => {
-				let frame = swap_chain
-					.get_current_frame()
-					.expect("Failed to acquire next swap chain texture")
-					.output;
+				let frame = match surface.get_current_texture() {
+					Ok(frame) => frame,
+						Err(_) => {
+							surface.configure(&device, &config);
+							surface
+								.get_current_texture()
+								.expect("Failed to acquire next surface texture!")
+						}
+				};
+				let view = frame
+					.texture
+					.create_view(&wgpu::TextureViewDescriptor::default());
 
 				let mut encoder =
 					device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 				{
 					let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-						color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-							attachment: &frame.view,
+						label: None,
+						color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+							view: &view,
 							resolve_target: None,
 							ops: wgpu::Operations {
 								load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
 								store: true,
 							},
-						}],
+						})],
 						depth_stencil_attachment: None,
 					});
 					rpass.set_pipeline(&render_pipeline.as_ref().unwrap());
@@ -394,6 +435,7 @@ async fn run(event_loop: EventLoop<()>, window: Window, swapchain_format: wgpu::
 				}
 
 				queue.submit(Some(encoder.finish()));
+				frame.present();
 			}
 			Event::WindowEvent {
 				event: WindowEvent::CloseRequested,

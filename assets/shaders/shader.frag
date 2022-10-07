@@ -181,7 +181,11 @@ Material Material_blend(in Material base, in Material other, in float percent_ot
 		mix(base.diffusion, other.diffusion, percent_other)
 	);
 }
-const Material Material_white = Material(vec3(1.,1.,1.), vec3zero, 0., 0.);
+// const Material Material_white = Material(vec3(1.,1.,1.), vec3zero, 0., 0.);
+// #define Material_white Material(vec3(1.,1.,1.), vec3zero, 0., 0.)
+Material Material_white_get() {
+	return Material(vec3(1.,1.,1.), vec3zero, 0., 0.);
+}
 
 
 // all sdf's are from origin?
@@ -275,7 +279,7 @@ void union_smooth_sdf(inout SceneResult base, in SceneResult added) {
 
 
 SceneResult scene_sdf_res(in vec3 p) {
-	const Material white = Material_white;
+	const Material white = Material_white_get();
 	SceneResult r = SceneResult(inf, white);
 	// r = union_sdf(r, sphere_sdf(p, mousex));
 	// r = union_sdf(r, sphere_sdf(p-vec3(.6,0.3,0.2), 0.3));
@@ -435,14 +439,14 @@ struct RayMarchRes {
 
 // ray origin, ray direction
 RayMarchRes do_raymarch(in vec3 ro, in vec3 rd) {
-
+	
 	// for antialiasing
 	// float first_dist_within_1px = -1.0;
 	// float first_dist_within_1px_p = -1.0;
 
 	float closeness_f = 0.0005;
 	float acc_closeness = 0;
-	Material last_material = Material_white;
+	Material last_material = Material_white_get();
 
 	float dist = 0;
 	float step_dist;
@@ -607,7 +611,7 @@ void main() {
 	float aspect_ratio = raster_size.x/raster_size.y;
 	uv.x *= aspect_ratio;
 
-
+	
 	// uncomment to test hsb
 	// float a = angle_of_vec2(uv);
 	// // a = rot_angle(a, angle_of_vec2(mp));
@@ -634,19 +638,20 @@ void main() {
 	// }
 	// return;
 
-
+	
 	// camera
 	vec3 eye_pos = vec3(.0,.0,1.5); // +mp.y
 	float film_offset = 1.0-0.2;
 	float film_width = 1.0;
-
+	
 	vec2 film_pixel_size = vec2(film_width, film_width) / raster_size.xy; // TODO: aspect_ratio?
 	vec3 pixel_center = eye_pos + vec3(uv.xy + film_pixel_size.xy/2.0, -film_offset); // TODO: aspect_ratio?
-
+	
 	vec3 ray_dir = normalize(pixel_center - eye_pos);
 	// ray_dir.xz = rot2(ray_dir.xz, PI2*mp.x);
+	
 	RayMarchRes res = do_raymarch(eye_pos, ray_dir);
-
+	
 	// float d = box_sdf(vec3(uv, 0.0)-vec3(0.0,mp.y, mp.x), vec3(0.1,0.2,0.1));
 	// frag_color = vec4(d, d, d, 1.0);
 	// return;
