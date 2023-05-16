@@ -28,8 +28,8 @@ const float k_ray_marching_start_offset = 0.0001;
 const float k_ray_marching_max_dist = 100.0;
 const float k_ray_marching_epsilon = 0.0001;
 const float k_derivative_epsilon = 0.0001;
-const int k_reflection_bounces_max = 3;
-const int k_iter_count = 2;
+const int k_reflection_bounces_max = 5;
+const int k_iter_count = 1;
 #define k_fib_diffuse 0
 #define k_fib_diffuse_count 1000 // should be higher than k_iter_count
 #define k_plastic 1
@@ -252,6 +252,9 @@ void union_smooth_sdf(inout SceneResult base, in SceneResult added, in float k) 
 	float ad = added.dist-dist;
 	float percent_added = bd/(bd+ad); // 1-ad/(bd+ad)
 
+	// percent_added = 0.;
+	// dist = min(base.dist, added.dist);
+
 	base = SceneResult(dist, Material_blend(base.material, added.material, percent_added));
 }
 void sub_smooth_sdf(inout SceneResult base, in SceneResult added, in float k) {
@@ -311,7 +314,7 @@ SceneResult scene_sdf_res(in vec3 p) {
 	union_smooth_sdf(r, SceneResult(box_sdf(p-vec3(1.0+0.01,0.0,0.0), vec3(0.02,10.,10.)), white));
 	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,1.0,0.0), normalize(vec3(0.0, -1.0, 0.0)), 0.), white));
 	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,0.0,-2.0), normalize(vec3(0.0, 0.0, 1.0)), 0.), white));
-	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,0.0,3.0), normalize(vec3(0.0, 0.0, -1.0)), 0.), white));
+	union_smooth_sdf(r, SceneResult(plane_sdf(p-vec3(0.0,0.0,6.0), normalize(vec3(0.0, 0.0, -1.0)), 0.), white));
 
 	// sphere cutout
 	// sub_smooth_sdf(r, SceneResult(sphere_sdf(p-vec3(mp.xy, -0.4), 0.22), Material_hs(2., 1.)), 0.2);
@@ -349,27 +352,28 @@ SceneResult scene_sdf_res(in vec3 p) {
 
 	Material blue_ball_mat = Material(hsb(PI2*0.5, 1., 1.0), vec3zero, 1.0, 1.0);
 	union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(0.3, -0.3, -0.3), 0.23), blue_ball_mat), 0.8);
-	union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(mp.xy, -0.4), 0.23), Material_hs(2., 1.)));
+	union_smooth_sdf(rballs, SceneResult(sphere_sdf(p-vec3(mp.xy, -0.4)*1.5, 0.23*2.), Material_hs(2.+mp.x, 1.)));
+	// union_smooth_sdf(rballs, SceneResult(box_sdf(p-vec3(mp.xy, -0.4), vec3(0.23*2., 0.23*2., 0.23*2.)), Material_hs(2.+mp.x, 1.)), 0.9);
 	union_smooth_sdf(r, rballs, 0.2);
 
 
 	// lamps
-	{
-		float repetition_z_interval = 0.6;
-		float lamp_h = 0.08;
-		vec3 lamp_s = vec3(.6,.02,.13);
-		vec3 lamp_p = vec3(0.,1.0,0.22+floor(p.z/repetition_z_interval)*repetition_z_interval);
-		// lamp_p.y -= (p.z-lamp_p.z)*0.8;
-		// abs trick for symmetry
-		vec3 foot_p = p-lamp_p-vec3(0.,-lamp_h+lamp_h/2.0,0.);
-		// foot_p.x = abs(foot_p.x)-lamp_s.x*0.91;
-		// foot_p.z = abs(foot_p.z)-lamp_s.z*0.91;
-		foot_p.xz = abs(foot_p.xz)-lamp_s.xz*0.91;
-		union_sdf(r, SceneResult(box_sdf(foot_p, vec3(.03, lamp_h/2., .03)), white));
+	// {
+	// 	float repetition_z_interval = 0.6;
+	// 	float lamp_h = 0.08;
+	// 	vec3 lamp_s = vec3(.6,.02,.13);
+	// 	vec3 lamp_p = vec3(0.,1.0,0.22+floor(p.z/repetition_z_interval)*repetition_z_interval);
+	// 	// lamp_p.y -= (p.z-lamp_p.z)*0.8;
+	// 	// abs trick for symmetry
+	// 	vec3 foot_p = p-lamp_p-vec3(0.,-lamp_h+lamp_h/2.0,0.);
+	// 	// foot_p.x = abs(foot_p.x)-lamp_s.x*0.91;
+	// 	// foot_p.z = abs(foot_p.z)-lamp_s.z*0.91;
+	// 	foot_p.xz = abs(foot_p.xz)-lamp_s.xz*0.91;
+	// 	union_sdf(r, SceneResult(box_sdf(foot_p, vec3(.03, lamp_h/2., .03)), white));
 
-		union_sdf(r, SceneResult(box_sdf(p-lamp_p-vec3(0.,-lamp_h+0.008,0.), (lamp_s+vec3(0.03, .0, 0.03)-vec3(0.02)))-0.02, Material(hsb(0., 0., 1.), vec3(0.), 0.4, 0.)));
-		union_sdf(r, SceneResult(box_sdf(p-lamp_p-vec3(0.,-lamp_h,0.), lamp_s), Material(hsb(0., 0., 1.), vec3(1.), 0., 0.)));
-	}
+	// 	union_sdf(r, SceneResult(box_sdf(p-lamp_p-vec3(0.,-lamp_h+0.008,0.), (lamp_s+vec3(0.03, .0, 0.03)-vec3(0.02)))-0.02, Material(hsb(0., 0., 1.), vec3(0.), 0.4, 0.)));
+	// 	union_sdf(r, SceneResult(box_sdf(p-lamp_p-vec3(0.,-lamp_h,0.), lamp_s), Material(hsb(0., 0., 1.), vec3(1.), 0., 0.)));
+	// }
 
 
 	// mirror
@@ -499,13 +503,13 @@ vec4 simplified_lighting(in vec3 p, in RayMarchRes rm, in vec3 eye_pos, in vec3 
 	vec3 from_eye = normalize(p-eye_pos);
 	vec3 to_eye = -from_eye;
 
-	float mousex2 = mix(0.72, 0.5, rm.material.diffusion);
+	float mousex2 = 0.2;//mix(0.72, 0.5, rm.material.diffusion);
 
 	{
 		// vec3 light_pos = vec3(0.3, 1.3,(mousex-0.5)*3.0);
 		vec3 light_pos = vec3(0., 0., 0.);
 		// vec3 light_pos = vec3((mousex-0.5)*2.0, -2.0*(mousey-0.5), 0.0);
-		float intensity = 0.4;
+		float intensity = 0.5;
 
 		vec3 from_light = normalize(p-light_pos);
 		vec3 perfect_reflection = reflect(from_light, norm);
@@ -640,7 +644,9 @@ void main() {
 
 	
 	// camera
-	vec3 eye_pos = vec3(.0,.0,1.5); // +mp.y
+	// vec3 eye_pos = vec3(.0+mp.x,.0+mp.y*2.,1.5+mp.y*10.);
+	vec3 eye_pos = vec3(.0, .0, 1.5+mp.y*3.);
+	// vec3 eye_pos = vec3(.0,.0,5.5);
 	float film_offset = 1.0-0.2;
 	float film_width = 1.0;
 	
