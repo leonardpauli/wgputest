@@ -33,7 +33,7 @@ fn main() {
 	let event_loop = EventLoop::new();
 	let window = winit::window::WindowBuilder::new()
 		.with_inner_size(winit::dpi::PhysicalSize::new(WINDOW_SIZE_PHYSICAL.0, WINDOW_SIZE_PHYSICAL.1))
-		.with_title("wgputest by Leonard Pauli, oct 2020")
+		.with_title("wgputest by Leonard Pauli, oct 2020; hold R")
 		.build(&event_loop).unwrap();
 	// #[cfg(not(target_arch = "wasm32"))]
 	{

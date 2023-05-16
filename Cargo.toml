@@ -20,7 +20,7 @@ notify = "5.0.0"
 [package.metadata.bundle]
 name = "wgputest"
 identifier = "com.leonardpauli.wgputest"
-#icon = ["32x32.png", "128x128.png", "128x128@2x.png"]
+icon = ["icon512x512@2x.png"]
 version = "0.1.0"
 resources = ["assets"]
 copyright = "Copyright (c) Leonard Pauli 2020-2021. All rights reserved."

@@ -670,6 +670,7 @@ void main() {
 	if (res.dist > k_ray_marching_max_dist) frag_color.x += res.accumulated_closeness;//*0.5;
 
 	// gamma correct
-	float gamma = 2.2;
+	//float gamma = 2.2;
+	float gamma = 2.8;
 	frag_color.rgb = pow(frag_color.rgb, vec3(1./gamma));
 }
