@@ -6,7 +6,7 @@
 ![interactive example preview](notes/wgputestm.gif)
 
 *Try yourself under releases! (m1)*
-<p><a href="./releases"><img width="128" src="./notes/icon512x512@2x.png"/></a></p>
+<p><a href="https://github.com/leonardpauli/wgputest/releases"><img width="128" src="./notes/icon512x512@2x.png"/></a></p>
 
 First experiment playing around with shaders and native apps using rust/winit/wgpu. The raytracer is written "from scratch" with glsl, using pure math and logic to simulate millions of lightrays raymarching around a world defined through SDF. Below are some snapshots, some realtime (with phong lighting and low reflection counts), others more time consuming.
 
